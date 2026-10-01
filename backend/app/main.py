@@ -1,8 +1,9 @@
 import os
 import uuid
+import logging
 from pathlib import Path
 from typing import Optional
-from fastapi import FastAPI, HTTPException, Header, Depends, Query
+from fastapi import FastAPI, HTTPException, Header, Depends, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from celery.result import AsyncResult
@@ -10,8 +11,10 @@ from celery.result import AsyncResult
 from app.config import settings
 from app.schemas import DownloadRequest, DownloadResponse, DownloadStatus, HealthResponse
 from app.celery_app import celery_app
-from app.tasks import process_media_download, cleanup_old_files
+from app.tasks import process_media_download, execute_download, cleanup_old_files
 from app.supabase_client import get_supabase, create_download_record
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -19,7 +22,7 @@ app = FastAPI(
     description="API de extração e conversão de mídia com yt-dlp e FFmpeg"
 )
 
-# Configuração de CORS para permitir requisições do front na Vercel
+# Configuração de CORS para permitir requisições do front na Vercel e localhost
 origins = [o.strip() for o in settings.ALLOWED_ORIGINS.split(",") if o.strip()]
 if "*" in origins or not origins:
     allow_origins = ["*"]
@@ -47,7 +50,7 @@ def health_check():
     """Verifica a integridade da API, Redis e Supabase."""
     redis_ok = False
     try:
-        redis_ok = celery_app.control.ping() is not None
+        redis_ok = celery_app.control.ping(timeout=0.5) is not None
     except Exception:
         redis_ok = False
 
@@ -60,14 +63,18 @@ def health_check():
 
 
 @app.post("/api/downloads", response_model=DownloadResponse)
-def enqueue_download(request: DownloadRequest, authorized: bool = Depends(verify_secret_key)):
+def enqueue_download(
+    request: DownloadRequest,
+    background_tasks: BackgroundTasks,
+    authorized: bool = Depends(verify_secret_key)
+):
     """
-    Recebe a solicitação de download e joga na fila do Celery.
-    Garante concorrência controlada na VPS.
+    Recebe a solicitação de download.
+    Em produção com Redis: enfileira no Celery.
+    Em desenvolvimento local sem Redis: processa com BackgroundTasks nativo do FastAPI.
     """
     download_id = request.id or str(uuid.uuid4())
 
-    # Se o registro não existe no Supabase, tenta criar
     create_download_record(
         download_id=download_id,
         user_id=request.user_id,
@@ -77,77 +84,122 @@ def enqueue_download(request: DownloadRequest, authorized: bool = Depends(verify
         is_playlist=request.is_playlist
     )
 
-    # Dispara a tarefa assíncrona no Celery
-    task = process_media_download.apply_async(
-        args=[
+    use_celery = False
+    try:
+        if celery_app.control.ping(timeout=0.3):
+            use_celery = True
+    except Exception:
+        use_celery = False
+
+    if use_celery:
+        logger.info(f"Enfileirando {download_id} no Celery (Worker VPS)")
+        task = process_media_download.apply_async(
+            args=[
+                download_id,
+                request.url,
+                request.format,
+                request.quality or "standard",
+                request.is_playlist
+            ],
+            task_id=download_id
+        )
+        task_id = task.id
+    else:
+        logger.info(f"Executando {download_id} via BackgroundTasks local (modo desenvolvimento)")
+        background_tasks.add_task(
+            execute_download,
             download_id,
             request.url,
             request.format,
             request.quality or "standard",
             request.is_playlist
-        ],
-        task_id=download_id
-    )
+        )
+        task_id = download_id
 
     return DownloadResponse(
         id=download_id,
-        task_id=task.id,
+        task_id=task_id,
         status="pending",
-        message="Download enfileirado com sucesso."
+        message="Download iniciado com sucesso."
     )
 
 
 @app.get("/api/downloads/{download_id}", response_model=DownloadStatus)
 def get_download_status(download_id: str):
-    """Consulta o status da tarefa no Celery ou Supabase."""
-    task_res = AsyncResult(download_id, app=celery_app)
-    
-    # Se concluído
-    if task_res.state == "SUCCESS":
-        result = task_res.result or {}
-        return DownloadStatus(
-            id=download_id,
-            status="completed",
-            progress=100,
-            title=result.get("title"),
-            filename=result.get("filename"),
-            download_url=result.get("download_url"),
-            file_size=result.get("file_size")
-        )
-    elif task_res.state == "FAILURE":
-        return DownloadStatus(
-            id=download_id,
-            status="failed",
-            error_message=str(task_res.result)
-        )
-    elif task_res.state == "PROGRESS":
-        meta = task_res.info or {}
-        return DownloadStatus(
-            id=download_id,
-            status="processing",
-            progress=meta.get("progress", 50)
-        )
+    """Consulta o status da tarefa no Supabase ou Celery."""
+    # 1. Consulta no Supabase (fonte da verdade)
+    client = get_supabase()
+    if client:
+        try:
+            res = client.table("media_downloads").select("*").eq("id", download_id).execute()
+            if res.data:
+                item = res.data[0]
+                return DownloadStatus(
+                    id=download_id,
+                    status=item.get("status", "pending"),
+                    progress=item.get("progress", 0),
+                    title=item.get("title"),
+                    thumbnail=item.get("thumbnail"),
+                    download_url=item.get("download_url"),
+                    filename=item.get("filename"),
+                    file_size=item.get("file_size"),
+                    error_message=item.get("error_message")
+                )
+        except Exception as e:
+            logger.error(f"Erro ao consultar status no Supabase: {e}")
+
+    # 2. Fallback Celery
+    try:
+        task_res = AsyncResult(download_id, app=celery_app)
+        if task_res.state == "SUCCESS":
+            result = task_res.result or {}
+            return DownloadStatus(
+                id=download_id,
+                status="completed",
+                progress=100,
+                title=result.get("title"),
+                filename=result.get("filename"),
+                download_url=result.get("download_url"),
+                file_size=result.get("file_size")
+            )
+        elif task_res.state == "FAILURE":
+            return DownloadStatus(
+                id=download_id,
+                status="failed",
+                error_message=str(task_res.result)
+            )
+        elif task_res.state == "PROGRESS":
+            meta = task_res.info or {}
+            return DownloadStatus(
+                id=download_id,
+                status="processing",
+                progress=meta.get("progress", 50)
+            )
+    except Exception:
+        pass
 
     return DownloadStatus(
         id=download_id,
-        status="pending" if task_res.state == "PENDING" else task_res.state.lower(),
+        status="pending",
         progress=0
     )
 
 
 @app.get("/api/files/{filename}")
 def download_file(filename: str):
-    """
-    Entrega o arquivo baixado com suporte a download direto no navegador.
-    """
-    # Prevenção básica contra path traversal
+    """Entrega o arquivo baixado com suporte a download direto no navegador."""
     safe_name = os.path.basename(filename)
     file_path = Path(settings.DOWNLOAD_DIR) / safe_name
 
     if not file_path.exists() or not file_path.is_file():
         raise HTTPException(status_code=404, detail="Arquivo não encontrado ou já expirado pelo sistema de limpeza.")
 
-    media_type = "audio/mpeg" if safe_name.endswith(".mp3") else "video/mp4"
+    if safe_name.endswith(".zip"):
+        media_type = "application/zip"
+    elif safe_name.endswith(".mp3"):
+        media_type = "audio/mpeg"
+    else:
+        media_type = "video/mp4"
 
     return FileResponse(
         path=str(file_path),

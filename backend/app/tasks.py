@@ -23,22 +23,19 @@ def sanitize_filename(name: str) -> str:
     return name[:100]  # Limita tamanho para evitar erros de path
 
 
-@celery_app.task(bind=True, name="app.tasks.process_media_download")
-def process_media_download(
-    self,
+def execute_download(
     download_id: str,
     url: str,
     format_type: str = "mp3",
     quality: str = "standard",
-    is_playlist: bool = False
+    is_playlist: bool = False,
+    task_instance=None
 ) -> Dict[str, Any]:
     """
-    Executa o download e conversão da mídia usando yt-dlp e FFmpeg.
-    - quality 'standard': MP3 128kbps / MP4 720p (grátis para todos sem login)
-    - quality 'high': MP3 320kbps / MP4 1080p+ (exclusivo para cadastrados)
-    - is_playlist: empacota a lista de vídeos em um arquivo .zip
+    Função principal de download e conversão.
+    Pode ser executada pelo Celery (em produção com Redis) ou diretamente pelo FastAPI (em desenvolvimento local).
     """
-    logger.info(f"Iniciando download {download_id} para {url} (formato: {format_type}, qualidade: {quality}, playlist: {is_playlist})")
+    logger.info(f"Processando download {download_id} para {url} (formato: {format_type}, qualidade: {quality}, playlist: {is_playlist})")
     
     update_download_record(download_id, {
         "status": "processing",
@@ -60,7 +57,8 @@ def process_media_download(
                     last_progress_val = percent
                     last_progress_time = now
                     update_download_record(download_id, {"progress": min(percent, 90)})
-                    self.update_state(state="PROGRESS", meta={"progress": percent})
+                    if task_instance:
+                        task_instance.update_state(state="PROGRESS", meta={"progress": percent})
 
     download_dir = Path(settings.DOWNLOAD_DIR)
     download_dir.mkdir(parents=True, exist_ok=True)
@@ -135,7 +133,6 @@ def process_media_download(
                     if file_in_pl.is_file():
                         zipf.write(file_in_pl, arcname=file_in_pl.name)
 
-            # Limpa a pasta temporária da playlist
             shutil.rmtree(playlist_subfolder, ignore_errors=True)
             final_file = zip_filepath
         else:
@@ -181,9 +178,29 @@ def process_media_download(
         raise exc
 
 
+@celery_app.task(bind=True, name="app.tasks.process_media_download")
+def process_media_download(
+    self,
+    download_id: str,
+    url: str,
+    format_type: str = "mp3",
+    quality: str = "standard",
+    is_playlist: bool = False
+) -> Dict[str, Any]:
+    """Worker Celery em produção."""
+    return execute_download(
+        download_id=download_id,
+        url=url,
+        format_type=format_type,
+        quality=quality,
+        is_playlist=is_playlist,
+        task_instance=self
+    )
+
+
 @celery_app.task(name="app.tasks.cleanup_old_files")
 def cleanup_old_files() -> int:
-    """Remove arquivos temporários da pasta de downloads com tempo de vida superior a MAX_FILE_AGE_HOURS."""
+    """Remove arquivos temporários com tempo de vida superior a MAX_FILE_AGE_HOURS."""
     download_dir = Path(settings.DOWNLOAD_DIR)
     if not download_dir.exists():
         return 0
