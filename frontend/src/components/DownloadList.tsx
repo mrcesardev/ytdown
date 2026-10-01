@@ -256,10 +256,11 @@ export default function DownloadList({ userId, activeDownloads }: DownloadListPr
 
                   {item.status === 'failed' && (
                     <span
-                      className="inline-flex items-center gap-1.5 text-xs text-rose-400"
+                      className="inline-flex items-center gap-1.5 text-xs text-rose-400 font-medium"
                       title={item.error_message || 'Falha no processamento'}
                     >
-                      <XCircle className="w-3.5 h-3.5" /> Erro no download
+                      <XCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span className="truncate max-w-xs">{item.error_message || 'Erro no download'}</span>
                     </span>
                   )}
                 </div>

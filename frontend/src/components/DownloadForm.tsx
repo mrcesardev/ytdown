@@ -99,7 +99,16 @@ export default function DownloadForm({ userId, onDownloadStarted }: DownloadForm
 
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.detail || 'Falha ao comunicar com o servidor de conversão.');
+        const errorDetail = errorData.detail || 'Falha ao comunicar com o servidor de conversão.';
+        await supabase
+          .from('media_downloads')
+          .update({
+            status: 'failed',
+            error_message: errorDetail,
+          })
+          .eq('id', record.id);
+
+        throw new Error(errorDetail);
       }
 
       // Se for anônimo, salva o id no localStorage para recuperar o progresso se recarregar
