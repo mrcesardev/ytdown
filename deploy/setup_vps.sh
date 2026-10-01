@@ -26,7 +26,7 @@ fi
 # 2. Atualizar pacotes do sistema
 echo "🔄 Atualizando repositórios e pacotes..."
 apt update && apt upgrade -y
-apt install -y curl wget git ufw htop ca-certificates
+apt install -y curl wget git ufw htop ca-certificates nginx certbot python3-certbot-nginx
 
 # 3. Instalar Docker oficial via script de conveniência
 echo "🐳 Instalando Docker e Docker Compose oficial..."

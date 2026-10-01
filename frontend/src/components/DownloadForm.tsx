@@ -81,15 +81,11 @@ export default function DownloadForm({ userId, onDownloadStarted }: DownloadForm
 
       if (dbError) throw dbError;
 
-      // 2. Notifica a API da VPS para enfileirar o processamento
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-      const apiSecret = process.env.NEXT_PUBLIC_API_SECRET_KEY || '';
-
-      const res = await fetch(`${apiUrl}/api/downloads`, {
+      // 2. Notifica a API da VPS para enfileirar o processamento (via proxy serverless do Next.js)
+      const res = await fetch('/api/downloads', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(apiSecret ? { 'X-API-KEY': apiSecret } : {}),
         },
         body: JSON.stringify({
           id: record.id,
