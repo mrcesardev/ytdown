@@ -3,8 +3,8 @@ import { NextRequest, NextResponse } from 'next/server';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const apiUrl = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-    const apiSecret = process.env.API_SECRET_KEY || process.env.NEXT_PUBLIC_API_SECRET_KEY || '';
+    const apiUrl = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://45.178.180.152:8000';
+    const apiSecret = process.env.API_SECRET_KEY || process.env.NEXT_PUBLIC_API_SECRET_KEY || 'ytdown_sec_7d2a1b194b53cae48270df94b45a43d0f0583a8bd8226dfe';
 
     const backendRes = await fetch(`${apiUrl.replace(/\/$/, '')}/api/downloads`, {
       method: 'POST',
