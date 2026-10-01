@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: ytdown_redis
+    restart: always
+    command: redis-server --save "" --appendonly no --maxmemory 128mb --maxmemory-policy allkeys-lru
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: .
+    container_name: ytdown_api
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - BASE_URL=${BASE_URL:-http://localhost:8000}
+      - API_SECRET_KEY=${API_SECRET_KEY}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-*}
+      - DOWNLOAD_DIR=/app/downloads
+    volumes:
+      - ./downloads:/app/downloads
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  worker:
+    build: .
+    container_name: ytdown_worker
+    restart: always
+    # Concurrency=1 garante que a VPS (2vCPU / 2GB RAM) execute conversões uma por vez, evitando OOM
+    command: celery -A app.celery_app.celery_app worker --concurrency=1 --loglevel=info
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - BASE_URL=${BASE_URL:-http://localhost:8000}
+      - DOWNLOAD_DIR=/app/downloads
+    volumes:
+      - ./downloads:/app/downloads
+    depends_on:
+      redis:
+        condition: service_healthy
