@@ -1,10 +1,13 @@
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl =
-  process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://bxnfquyxfsrtpcsfbayi.supabase.co';
+  process.env.NEXT_PUBLIC_SUPABASE_URL ||
+  process.env.SUPABASE_URL ||
+  '';
 const supabaseAnonKey =
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ4bmZxdXl4ZnNydHBjc2ZiYXlpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA4NjY5MjYsImV4cCI6MjEwNjQ0MjkyNn0.WZKbKDq_B2pWEjDVNnMyRXdR6TnFfYmrrm7QkPC7jzg';
+  process.env.SUPABASE_ANON_KEY ||
+  '';
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 

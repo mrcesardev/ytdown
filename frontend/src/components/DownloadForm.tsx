@@ -64,82 +64,51 @@ export default function DownloadForm({ userId, onDownloadStarted }: DownloadForm
     setError(null);
 
     try {
-      // 1. Cria o registro inicial no Supabase (user_id é nulo se anônimo)
-      let record: MediaDownload;
-      try {
-        const { data, error: dbError } = await supabase
-          .from('media_downloads')
-          .insert({
-            user_id: userId || null,
-            original_url: url.trim(),
-            format: format,
-            quality: quality,
-            is_playlist: isPlaylist,
-            status: 'pending',
-            progress: 0,
-          })
-          .select()
-          .single();
+      // Envia solicitação para a API do Next.js (que grava no Supabase e aciona a VPS no servidor)
+      const res = await fetch('/api/downloads', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          url: url.trim(),
+          format: format,
+          quality: quality,
+          is_playlist: isPlaylist,
+          user_id: userId || null,
+        }),
+      });
 
-        if (dbError) throw dbError;
-        record = data as MediaDownload;
-      } catch (dbErr: any) {
-        console.error('Erro ao registrar no Supabase:', dbErr);
-        throw new Error(`Falha de comunicação com o Supabase: ${dbErr.message || 'Erro de rede'}`);
-      }
-
-      // 2. Notifica a API da VPS para enfileirar o processamento (via proxy serverless do Next.js)
-      let res: Response;
-      try {
-        res = await fetch('/api/downloads', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            id: record.id,
-            url: url.trim(),
-            format: format,
-            quality: quality,
-            is_playlist: isPlaylist,
-            user_id: userId || null,
-          }),
-        });
-      } catch (fetchErr: any) {
-        console.error('Erro na chamada /api/downloads:', fetchErr);
-        await supabase
-          .from('media_downloads')
-          .update({
-            status: 'failed',
-            error_message: `Falha ao acionar VPS: ${fetchErr.message || 'Erro de rede'}`,
-          })
-          .eq('id', record.id);
-        throw new Error(`Falha de rede ao acionar a VPS: ${fetchErr.message || 'Verifique bloqueadores de anúncio'}`);
-      }
+      const resData = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        const errorDetail = errorData.detail || 'Falha ao comunicar com o servidor de conversão.';
-        await supabase
-          .from('media_downloads')
-          .update({
-            status: 'failed',
-            error_message: errorDetail,
-          })
-          .eq('id', record.id);
-
-        throw new Error(errorDetail);
+        throw new Error(resData.detail || 'Falha ao iniciar o download.');
       }
 
+      const createdRecord: MediaDownload = resData.record || {
+        id: resData.id,
+        user_id: userId || null,
+        original_url: url.trim(),
+        format: format,
+        quality: quality,
+        is_playlist: isPlaylist,
+        status: 'pending',
+        progress: 0,
+        created_at: new Date().toISOString(),
+      };
+
       // Se for anônimo, salva o id no localStorage para recuperar o progresso se recarregar
-      if (!userId && typeof window !== 'undefined') {
-        const existing = JSON.parse(localStorage.getItem('ytdown_anon_downloads') || '[]');
-        localStorage.setItem('ytdown_anon_downloads', JSON.stringify([record.id, ...existing.slice(0, 9)]));
+      if (!userId && typeof window !== 'undefined' && createdRecord.id) {
+        const existing: string[] = JSON.parse(localStorage.getItem('ytdown_anon_downloads') || '[]');
+        localStorage.setItem(
+          'ytdown_anon_downloads',
+          JSON.stringify([createdRecord.id, ...existing.filter((item) => item !== createdRecord.id).slice(0, 9)])
+        );
       }
 
       setUrl('');
       if (onDownloadStarted) {
-        onDownloadStarted(record as MediaDownload);
+        onDownloadStarted(createdRecord);
       }
     } catch (err: any) {
       setError(err.message || 'Erro ao iniciar o download.');
