@@ -65,37 +65,57 @@ export default function DownloadForm({ userId, onDownloadStarted }: DownloadForm
 
     try {
       // 1. Cria o registro inicial no Supabase (user_id é nulo se anônimo)
-      const { data: record, error: dbError } = await supabase
-        .from('media_downloads')
-        .insert({
-          user_id: userId || null,
-          original_url: url.trim(),
-          format: format,
-          quality: quality,
-          is_playlist: isPlaylist,
-          status: 'pending',
-          progress: 0,
-        })
-        .select()
-        .single();
+      let record: MediaDownload;
+      try {
+        const { data, error: dbError } = await supabase
+          .from('media_downloads')
+          .insert({
+            user_id: userId || null,
+            original_url: url.trim(),
+            format: format,
+            quality: quality,
+            is_playlist: isPlaylist,
+            status: 'pending',
+            progress: 0,
+          })
+          .select()
+          .single();
 
-      if (dbError) throw dbError;
+        if (dbError) throw dbError;
+        record = data as MediaDownload;
+      } catch (dbErr: any) {
+        console.error('Erro ao registrar no Supabase:', dbErr);
+        throw new Error(`Falha de comunicação com o Supabase: ${dbErr.message || 'Erro de rede'}`);
+      }
 
       // 2. Notifica a API da VPS para enfileirar o processamento (via proxy serverless do Next.js)
-      const res = await fetch('/api/downloads', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          id: record.id,
-          url: url.trim(),
-          format: format,
-          quality: quality,
-          is_playlist: isPlaylist,
-          user_id: userId || null,
-        }),
-      });
+      let res: Response;
+      try {
+        res = await fetch('/api/downloads', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            id: record.id,
+            url: url.trim(),
+            format: format,
+            quality: quality,
+            is_playlist: isPlaylist,
+            user_id: userId || null,
+          }),
+        });
+      } catch (fetchErr: any) {
+        console.error('Erro na chamada /api/downloads:', fetchErr);
+        await supabase
+          .from('media_downloads')
+          .update({
+            status: 'failed',
+            error_message: `Falha ao acionar VPS: ${fetchErr.message || 'Erro de rede'}`,
+          })
+          .eq('id', record.id);
+        throw new Error(`Falha de rede ao acionar a VPS: ${fetchErr.message || 'Verifique bloqueadores de anúncio'}`);
+      }
 
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
