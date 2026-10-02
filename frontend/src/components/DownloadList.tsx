@@ -25,49 +25,46 @@ export default function DownloadList({ userId, activeDownloads }: DownloadListPr
   const [downloads, setDownloads] = useState<MediaDownload[]>(activeDownloads);
   const [loading, setLoading] = useState(!!userId);
 
-  // 1. Carrega downloads do Supabase se o usuário estiver logado
+  // 1. Carrega downloads do Supabase/API
   useEffect(() => {
-    if (!userId) {
-      // Para usuários anônimos, recupera do localStorage se houver
-      if (typeof window !== 'undefined') {
-        const storedIds: string[] = JSON.parse(localStorage.getItem('ytdown_anon_downloads') || '[]');
-        if (storedIds.length > 0) {
-          supabase
-            .from('media_downloads')
-            .select('*')
-            .in('id', storedIds)
-            .order('created_at', { ascending: false })
-            .then(({ data }) => {
-              if (data) {
-                setDownloads(data as MediaDownload[]);
-              }
-            });
-        }
-      }
-      setLoading(false);
-      return;
-    }
+    let isMounted = true;
 
-    const fetchUserDownloads = async () => {
+    const loadDownloads = async () => {
       try {
-        const { data, error } = await supabase
-          .from('media_downloads')
-          .select('*')
-          .eq('user_id', userId)
-          .order('created_at', { ascending: false })
-          .limit(30);
-
-        if (!error && data) {
-          setDownloads(data as MediaDownload[]);
+        if (!userId) {
+          if (typeof window !== 'undefined') {
+            const storedIds: string[] = JSON.parse(localStorage.getItem('ytdown_anon_downloads') || '[]');
+            if (storedIds.length > 0) {
+              const res = await fetch(`/api/downloads?ids=${storedIds.join(',')}`);
+              if (res.ok) {
+                const data = await res.json();
+                if (isMounted && data.downloads) {
+                  setDownloads(data.downloads as MediaDownload[]);
+                }
+              }
+            }
+          }
+        } else {
+          const res = await fetch(`/api/downloads?user_id=${userId}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (isMounted && data.downloads) {
+              setDownloads(data.downloads as MediaDownload[]);
+            }
+          }
         }
       } catch (e) {
-        console.error('Erro ao buscar histórico:', e);
+        console.error('Erro ao carregar downloads:', e);
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     };
 
-    fetchUserDownloads();
+    loadDownloads();
+
+    return () => {
+      isMounted = false;
+    };
   }, [userId]);
 
   // Sincroniza quando activeDownloads muda no componente pai
@@ -81,7 +78,45 @@ export default function DownloadList({ userId, activeDownloads }: DownloadListPr
     }
   }, [activeDownloads]);
 
-  // 2. Realtime listener
+  // 2. Polling ativo para itens em andamento (pending ou processing)
+  useEffect(() => {
+    const hasActiveItems = downloads.some(
+      (d) => d.status === 'pending' || d.status === 'processing'
+    );
+    if (!hasActiveItems) return;
+
+    const intervalId = setInterval(async () => {
+      const activeIds = downloads
+        .filter((d) => d.status === 'pending' || d.status === 'processing')
+        .map((d) => d.id);
+
+      if (activeIds.length === 0) return;
+
+      try {
+        const res = await fetch(`/api/downloads?ids=${activeIds.join(',')}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.downloads && data.downloads.length > 0) {
+            setDownloads((prev) => {
+              const updatedMap = new Map<string, MediaDownload>(
+                data.downloads.map((item: MediaDownload) => [item.id, item])
+              );
+              return prev.map((item) => {
+                const fresh = updatedMap.get(item.id);
+                return fresh ? fresh : item;
+              });
+            });
+          }
+        }
+      } catch (err) {
+        console.error('Erro no polling de downloads:', err);
+      }
+    }, 2500);
+
+    return () => clearInterval(intervalId);
+  }, [downloads]);
+
+  // 3. Realtime listener via WebSocket
   useEffect(() => {
     const channel = supabase
       .channel('media_downloads_realtime')
@@ -101,7 +136,6 @@ export default function DownloadList({ userId, activeDownloads }: DownloadListPr
             if (exists) {
               return prev.map((item) => (item.id === updated.id ? updated : item));
             }
-            // Se for do mesmo usuário ou for anônimo recente
             if (userId && updated.user_id === userId) {
               return [updated, ...prev];
             }

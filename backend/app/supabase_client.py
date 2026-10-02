@@ -28,11 +28,12 @@ def get_supabase() -> Optional[Client]:
 def update_download_record(download_id: str, data: Dict[str, Any]) -> bool:
     """Atualiza o registro do download na tabela media_downloads."""
     if not supabase_client:
-        logger.debug(f"[Mock DB] Update {download_id}: {data}")
+        logger.warning(f"[Supabase Not Initialized] Cannot update {download_id}: {data}")
         return False
     try:
         data["updated_at"] = datetime.now(timezone.utc).isoformat()
         response = supabase_client.table("media_downloads").update(data).eq("id", download_id).execute()
+        logger.info(f"Supabase record {download_id} updated: status={data.get('status')}, progress={data.get('progress')}")
         return bool(response.data)
     except Exception as e:
         logger.error(f"Error updating Supabase record {download_id}: {e}")
