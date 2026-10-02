@@ -23,19 +23,112 @@ def sanitize_filename(name: str) -> str:
     return name[:100]  # Limita tamanho para evitar erros de path
 
 
+def extract_media_info(url: str) -> Dict[str, Any]:
+    """Extrai informações da mídia (vídeo ou playlist) rapidamente sem baixar."""
+    ydl_opts: Dict[str, Any] = {
+        "extract_flat": "in_playlist",
+        "skip_download": True,
+        "quiet": True,
+        "no_warnings": True,
+        "socket_timeout": 15,
+    }
+
+    def format_duration(seconds: Optional[int]) -> Optional[str]:
+        if not seconds:
+            return None
+        seconds = int(seconds)
+        mins, secs = divmod(seconds, 60)
+        hrs, mins = divmod(mins, 60)
+        if hrs > 0:
+            return f"{hrs:d}:{mins:02d}:{secs:02d}"
+        return f"{mins:02d}:{secs:02d}"
+
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+        if not info:
+            raise ValueError("Não foi possível extrair metadados da URL informada.")
+
+        is_playlist = info.get("_type") == "playlist" or "entries" in info
+
+        if is_playlist:
+            raw_entries = info.get("entries") or []
+            entries = []
+            for i, entry in enumerate(raw_entries, 1):
+                if not entry:
+                    continue
+                v_id = entry.get("id") or str(i)
+                v_url = entry.get("url")
+                if not v_url or not v_url.startswith("http"):
+                    v_url = f"https://www.youtube.com/watch?v={v_id}"
+
+                v_thumb = entry.get("thumbnail")
+                if not v_thumb and entry.get("thumbnails"):
+                    v_thumb = entry.get("thumbnails")[-1].get("url")
+                if not v_thumb and v_id:
+                    v_thumb = f"https://i.ytimg.com/vi/{v_id}/hqdefault.jpg"
+
+                entries.append({
+                    "index": i,
+                    "id": v_id,
+                    "title": entry.get("title") or f"Vídeo {i}",
+                    "duration": entry.get("duration"),
+                    "duration_formatted": format_duration(entry.get("duration")),
+                    "thumbnail": v_thumb,
+                    "url": v_url,
+                })
+
+            pl_thumb = info.get("thumbnail")
+            if not pl_thumb and entries:
+                pl_thumb = entries[0].get("thumbnail")
+
+            return {
+                "url": url,
+                "title": info.get("title") or "Playlist do YouTube",
+                "thumbnail": pl_thumb,
+                "duration": None,
+                "duration_formatted": None,
+                "uploader": info.get("uploader") or info.get("channel"),
+                "is_playlist": True,
+                "entries": entries,
+                "total_entries": len(entries),
+            }
+        else:
+            # Vídeo individual
+            duration = info.get("duration")
+            thumbnail = info.get("thumbnail")
+            if not thumbnail and info.get("thumbnails"):
+                thumbnail = info.get("thumbnails")[-1].get("url")
+            if not thumbnail and info.get("id"):
+                thumbnail = f"https://i.ytimg.com/vi/{info['id']}/hqdefault.jpg"
+
+            return {
+                "url": url,
+                "title": info.get("title") or "Vídeo do YouTube",
+                "thumbnail": thumbnail,
+                "duration": duration,
+                "duration_formatted": format_duration(duration),
+                "uploader": info.get("uploader") or info.get("channel"),
+                "is_playlist": False,
+                "entries": None,
+                "total_entries": 1,
+            }
+
+
 def execute_download(
     download_id: str,
     url: str,
     format_type: str = "mp3",
     quality: str = "standard",
     is_playlist: bool = False,
+    selected_urls: Optional[list] = None,
+    playlist_title: Optional[str] = None,
     task_instance=None
 ) -> Dict[str, Any]:
     """
     Função principal de download e conversão.
     Pode ser executada pelo Celery (em produção com Redis) ou diretamente pelo FastAPI (em desenvolvimento local).
     """
-    logger.info(f"Processando download {download_id} para {url} (formato: {format_type}, qualidade: {quality}, playlist: {is_playlist})")
+    logger.info(f"Processando download {download_id} para {url} (formato: {format_type}, qualidade: {quality}, playlist: {is_playlist}, selecionados: {len(selected_urls) if selected_urls else 'todos'})")
     
     update_download_record(download_id, {
         "status": "processing",
@@ -82,10 +175,15 @@ def execute_download(
         else:
             format_spec = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best"
 
+    # Se for playlist, garante limite de no máximo 5 itens
+    safe_selected_urls = None
+    if is_playlist and selected_urls:
+        safe_selected_urls = [u for u in selected_urls if isinstance(u, str) and u.strip()][:5]
+
     if is_playlist:
         playlist_subfolder = download_dir / f"pl_{download_id}"
         playlist_subfolder.mkdir(parents=True, exist_ok=True)
-        output_template = str(playlist_subfolder / "%(playlist_index)s - %(title).80s.%(ext)s")
+        output_template = str(playlist_subfolder / "%(autonumber)02d - %(title).80s.%(ext)s")
     else:
         playlist_subfolder = None
         output_template = str(download_dir / f"{download_id}_%(title).100s.%(ext)s")
@@ -95,7 +193,7 @@ def execute_download(
         "progress_hooks": [progress_hook],
         "quiet": True,
         "no_warnings": True,
-        "noplaylist": not is_playlist,
+        "noplaylist": True if safe_selected_urls else (not is_playlist),
         "socket_timeout": 30,
         "retries": 5,
         "format": format_spec,
@@ -107,21 +205,33 @@ def execute_download(
         ydl_opts["merge_output_format"] = "mp4"
 
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            if not info:
-                raise ValueError("Não foi possível extrair metadados da URL.")
+        title = playlist_title or ("playlist" if is_playlist else "video")
+        thumbnail = None
 
-            title = info.get("title", "playlist" if is_playlist else "video")
-            thumbnail = info.get("thumbnail")
-            
+        if safe_selected_urls:
+            # Baixa a lista de URLs selecionadas (até 5)
             update_download_record(download_id, {
                 "title": title,
-                "thumbnail": thumbnail,
-                "progress": 20
+                "progress": 15
             })
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download(safe_selected_urls)
+        else:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+                if not info:
+                    raise ValueError("Não foi possível extrair metadados da URL.")
 
-            ydl.download([url])
+                title = playlist_title or info.get("title", "playlist" if is_playlist else "video")
+                thumbnail = info.get("thumbnail")
+                
+                update_download_record(download_id, {
+                    "title": title,
+                    "thumbnail": thumbnail,
+                    "progress": 20
+                })
+
+                ydl.download([url])
 
         # Se for playlist, compacta em um único arquivo .zip
         if is_playlist and playlist_subfolder and playlist_subfolder.exists():
@@ -185,7 +295,9 @@ def process_media_download(
     url: str,
     format_type: str = "mp3",
     quality: str = "standard",
-    is_playlist: bool = False
+    is_playlist: bool = False,
+    selected_urls: Optional[list] = None,
+    playlist_title: Optional[str] = None
 ) -> Dict[str, Any]:
     """Worker Celery em produção."""
     return execute_download(
@@ -194,6 +306,8 @@ def process_media_download(
         format_type=format_type,
         quality=quality,
         is_playlist=is_playlist,
+        selected_urls=selected_urls,
+        playlist_title=playlist_title,
         task_instance=self
     )
 

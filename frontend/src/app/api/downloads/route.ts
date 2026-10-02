@@ -41,6 +41,7 @@ export async function POST(req: NextRequest) {
         .from('media_downloads')
         .insert({
           user_id: body.user_id || null,
+          title: body.playlist_title || body.title || null,
           original_url: body.url.trim(),
           format: body.format || 'mp3',
           quality: body.quality || 'standard',
@@ -80,6 +81,8 @@ export async function POST(req: NextRequest) {
             format: body.format || 'mp3',
             quality: body.quality || 'standard',
             is_playlist: Boolean(body.is_playlist),
+            selected_urls: body.selected_urls || null,
+            playlist_title: body.playlist_title || null,
             user_id: body.user_id || null,
           }),
         });

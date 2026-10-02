@@ -9,9 +9,21 @@ from fastapi.responses import FileResponse
 from celery.result import AsyncResult
 
 from app.config import settings
-from app.schemas import DownloadRequest, DownloadResponse, DownloadStatus, HealthResponse
+from app.schemas import (
+    DownloadRequest,
+    DownloadResponse,
+    DownloadStatus,
+    HealthResponse,
+    MediaInfoRequest,
+    MediaInfoResponse,
+)
 from app.celery_app import celery_app
-from app.tasks import process_media_download, execute_download, cleanup_old_files
+from app.tasks import (
+    process_media_download,
+    execute_download,
+    cleanup_old_files,
+    extract_media_info,
+)
 from app.supabase_client import get_supabase, create_download_record
 
 logger = logging.getLogger(__name__)
@@ -62,6 +74,17 @@ def health_check():
     )
 
 
+@app.post("/api/info", response_model=MediaInfoResponse)
+def get_media_info(request: MediaInfoRequest, authorized: bool = Depends(verify_secret_key)):
+    """Extrai informações como título, duração, capa e faixas da playlist."""
+    try:
+        data = extract_media_info(request.url)
+        return MediaInfoResponse(**data)
+    except Exception as e:
+        logger.error(f"Erro ao obter informações da URL {request.url}: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @app.post("/api/downloads", response_model=DownloadResponse)
 def enqueue_download(
     request: DownloadRequest,
@@ -99,7 +122,9 @@ def enqueue_download(
                 request.url,
                 request.format,
                 request.quality or "standard",
-                request.is_playlist
+                request.is_playlist,
+                request.selected_urls,
+                request.playlist_title
             ],
             task_id=download_id
         )
@@ -112,7 +137,9 @@ def enqueue_download(
             request.url,
             request.format,
             request.quality or "standard",
-            request.is_playlist
+            request.is_playlist,
+            request.selected_urls,
+            request.playlist_title
         )
         task_id = download_id
 
