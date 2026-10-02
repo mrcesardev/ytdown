@@ -1,29 +1,38 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-// Cliente Supabase no servidor utilizando as variáveis injetadas pela Vercel / Supabase integration
-const supabaseUrl =
-  process.env.NEXT_PUBLIC_SUPABASE_URL ||
-  process.env.SUPABASE_URL ||
-  '';
-
-const supabaseKey =
-  process.env.SUPABASE_SERVICE_ROLE_KEY ||
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-  process.env.SUPABASE_ANON_KEY ||
-  '';
-
-const supabaseServer = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
-
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const apiUrl = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || '';
-    const apiSecret = process.env.API_SECRET_KEY || process.env.NEXT_PUBLIC_API_SECRET_KEY || '';
+
+    // 1. Resolução de credenciais do Supabase
+    const supabaseUrl =
+      process.env.NEXT_PUBLIC_SUPABASE_URL ||
+      process.env.SUPABASE_URL ||
+      'https://kbfrolcsqnfazjjakfps.supabase.co';
+
+    const supabaseKey =
+      process.env.SUPABASE_SERVICE_ROLE_KEY ||
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+      process.env.SUPABASE_ANON_KEY ||
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtiZnJvbGNzcW5mYXpqamFrZnBzIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MDg3Nzc0OCwiZXhwIjoyMTA2NDUzNzQ4fQ.nyCjhGuXsDPyVAomAx0kKG3-nVoOxbKeZ72_M5jrIJE';
+
+    // 2. Resolução de endereço da VPS Backend
+    const apiUrl =
+      process.env.API_URL ||
+      process.env.NEXT_PUBLIC_API_URL ||
+      'http://45.178.180.152:8000';
+
+    const apiSecret =
+      process.env.API_SECRET_KEY ||
+      process.env.NEXT_PUBLIC_API_SECRET_KEY ||
+      'ytdown_sec_7d2a1b194b53cae48270df94b45a43d0f0583a8bd8226dfe';
 
     if (!body.url) {
       return NextResponse.json({ detail: 'URL do YouTube é obrigatória.' }, { status: 400 });
     }
+
+    const supabaseServer = createClient(supabaseUrl, supabaseKey);
 
     // 1. Cria o registro na tabela media_downloads diretamente no servidor Supabase
     let record: any = null;

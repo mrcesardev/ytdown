@@ -271,8 +271,10 @@ export default function DownloadList({ userId, activeDownloads }: DownloadListPr
             <div className="flex items-center gap-2 w-full sm:w-auto justify-end border-t sm:border-t-0 pt-3 sm:pt-0 border-slate-800">
               {item.status === 'completed' && item.download_url && (
                 <a
-                  href={item.download_url}
+                  href={item.download_url.replace('http://localhost:8000', 'http://45.178.180.152:8000')}
                   download
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-bold text-xs rounded-xl flex items-center gap-2 shadow-lg shadow-emerald-600/25 transition-all transform hover:scale-[1.02]"
                 >
                   <Download className="w-4 h-4" />
