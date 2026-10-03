@@ -1,4 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { cleanYouTubeUrl, isYouTubeUrl } from '@/lib/youtube';
+
+export const maxDuration = 45;
 
 const apiUrl =
   process.env.API_URL ||
@@ -13,9 +16,9 @@ const apiSecret =
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const url = body.url?.trim();
+    const rawUrl = body.url?.trim();
 
-    if (!url) {
+    if (!rawUrl) {
       return NextResponse.json({ detail: 'URL é obrigatória.' }, { status: 400 });
     }
 
@@ -26,12 +29,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!url.includes('youtube.com/') && !url.includes('youtu.be/')) {
+    if (!isYouTubeUrl(rawUrl)) {
       return NextResponse.json({ detail: 'URL inválida do YouTube.' }, { status: 400 });
     }
 
+    const url = cleanYouTubeUrl(rawUrl);
+
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 20000); // 20s timeout
+    const timeout = setTimeout(() => controller.abort(), 35000); // 35s timeout
 
     const vpsRes = await fetch(`${apiUrl.replace(/\/$/, '')}/api/info`, {
       method: 'POST',

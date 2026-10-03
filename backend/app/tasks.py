@@ -24,14 +24,37 @@ def sanitize_filename(name: str) -> str:
     return name[:100]  # Limita tamanho para evitar erros de path
 
 
+def clean_youtube_url(url: str) -> str:
+    """Remove parâmetros de mix/rádio automático (RD..., UL...) preservando o vídeo principal."""
+    try:
+        from urllib.parse import urlparse, parse_qs
+        parsed = urlparse(url.strip())
+        qs = parse_qs(parsed.query)
+        if "v" in qs and "list" in qs:
+            list_val = qs["list"][0]
+            if list_val.startswith("RD") or list_val.startswith("UL"):
+                return f"https://www.youtube.com/watch?v={qs['v'][0]}"
+        if "youtu.be" in parsed.netloc and "list" in qs:
+            list_val = qs["list"][0]
+            if list_val.startswith("RD") or list_val.startswith("UL"):
+                vid_id = parsed.path.lstrip("/")
+                if vid_id:
+                    return f"https://www.youtube.com/watch?v={vid_id}"
+    except Exception:
+        pass
+    return url.strip()
+
+
 def extract_media_info(url: str) -> Dict[str, Any]:
     """Extrai informações da mídia (vídeo ou playlist) rapidamente sem baixar."""
+    url = clean_youtube_url(url)
     ydl_opts: Dict[str, Any] = {
         "extract_flat": "in_playlist",
         "skip_download": True,
         "quiet": True,
         "no_warnings": True,
-        "socket_timeout": 15,
+        "socket_timeout": 10,
+        "playlistend": 15,  # Garante retorno rápido em playlists grandes
     }
 
     def format_duration(seconds: Optional[int]) -> Optional[str]:
@@ -129,6 +152,13 @@ def execute_download(
     Função principal de download e conversão.
     Pode ser executada pelo Celery (em produção com Redis) ou diretamente pelo FastAPI (em desenvolvimento local).
     """
+    url = clean_youtube_url(url)
+    if is_playlist and ("list=" not in url or "list=RD" in url or "list=UL" in url):
+        is_playlist = False
+
+    if selected_urls:
+        selected_urls = [clean_youtube_url(u) for u in selected_urls if isinstance(u, str)]
+
     logger.info(f"Processando download {download_id} para {url} (formato: {format_type}, qualidade: {quality}, playlist: {is_playlist}, selecionados: {len(selected_urls) if selected_urls else 'todos'})")
     
     update_download_record(download_id, {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { cleanYouTubeUrl, isYouTubePlaylist } from '@/lib/youtube';
 
 // 1. Resolução de credenciais do Supabase
 const supabaseUrl =
@@ -35,6 +36,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ detail: 'URL do YouTube é obrigatória.' }, { status: 400 });
     }
 
+    const rawUrl = body.url.trim();
+    const cleanUrl = cleanYouTubeUrl(rawUrl);
+    const isPlaylist = Boolean(body.is_playlist && isYouTubePlaylist(rawUrl));
+    const selectedUrlsClean = Array.isArray(body.selected_urls)
+      ? body.selected_urls.map((u: string) => (typeof u === 'string' ? cleanYouTubeUrl(u) : u))
+      : null;
+
     if (!supabaseUrl || !supabaseKey) {
       return NextResponse.json(
         { detail: 'Configuração do banco de dados (Supabase) ausente no servidor. Verifique as variáveis de ambiente.' },
@@ -52,10 +60,10 @@ export async function POST(req: NextRequest) {
         .insert({
           user_id: body.user_id || null,
           title: body.playlist_title || body.title || null,
-          original_url: body.url.trim(),
+          original_url: cleanUrl,
           format: body.format || 'mp3',
           quality: body.quality || 'standard',
-          is_playlist: Boolean(body.is_playlist),
+          is_playlist: isPlaylist,
           status: 'pending',
           progress: 0,
         })
@@ -87,11 +95,11 @@ export async function POST(req: NextRequest) {
           },
           body: JSON.stringify({
             id: downloadId,
-            url: body.url.trim(),
+            url: cleanUrl,
             format: body.format || 'mp3',
             quality: body.quality || 'standard',
-            is_playlist: Boolean(body.is_playlist),
-            selected_urls: body.selected_urls || null,
+            is_playlist: isPlaylist,
+            selected_urls: selectedUrlsClean,
             playlist_title: body.playlist_title || null,
             user_id: body.user_id || null,
           }),

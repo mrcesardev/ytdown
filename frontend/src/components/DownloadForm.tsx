@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase, MediaDownload } from '@/lib/supabase';
+import { isYouTubeUrl, isYouTubePlaylist, cleanYouTubeUrl } from '@/lib/youtube';
 import AuthModal from '@/components/AuthModal';
 import {
   Music,
@@ -72,12 +73,12 @@ export default function DownloadForm({ userId, onDownloadStarted }: DownloadForm
   const isYouTubeUrl = (inputUrl: string) =>
     inputUrl.includes('youtube.com/') || inputUrl.includes('youtu.be/');
 
-  const isPlaylistUrl = (inputUrl: string) => inputUrl.includes('list=');
+  const isPlaylistUrl = (inputUrl: string) => isYouTubePlaylist(inputUrl);
 
   // Busca metadados da URL
   const fetchMediaDetails = async (targetUrl: string) => {
-    const trimmed = targetUrl.trim();
-    if (!trimmed || !isYouTubeUrl(trimmed)) {
+    const cleaned = cleanYouTubeUrl(targetUrl.trim());
+    if (!cleaned || !isYouTubeUrl(cleaned)) {
       setMediaInfo(null);
       return;
     }
@@ -90,7 +91,7 @@ export default function DownloadForm({ userId, onDownloadStarted }: DownloadForm
       const res = await fetch('/api/info', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: trimmed }),
+        body: JSON.stringify({ url: cleaned }),
       });
 
       const json = await res.json();
@@ -189,14 +190,15 @@ export default function DownloadForm({ userId, onDownloadStarted }: DownloadForm
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!url.trim()) return;
+    const cleanUrl = cleanYouTubeUrl(url.trim());
+    if (!cleanUrl) return;
 
-    if (!isYouTubeUrl(url)) {
+    if (!isYouTubeUrl(cleanUrl)) {
       setError('Por favor, insira um link válido do YouTube.');
       return;
     }
 
-    const isPlaylist = mediaInfo ? mediaInfo.is_playlist : isPlaylistUrl(url);
+    const isPlaylist = mediaInfo ? mediaInfo.is_playlist : isPlaylistUrl(cleanUrl);
 
     // Validação de Playlist
     if (isPlaylist) {
@@ -235,7 +237,7 @@ export default function DownloadForm({ userId, onDownloadStarted }: DownloadForm
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          url: url.trim(),
+          url: cleanUrl,
           format,
           quality,
           is_playlist: isPlaylist,
