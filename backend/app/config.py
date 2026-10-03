@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     # Supabase
     SUPABASE_URL: str = ""
     SUPABASE_SERVICE_ROLE_KEY: str = ""
+    SUPABASE_SECRET_KEY: str = ""
 
     # Downloads
     DOWNLOAD_DIR: str = str(Path(__file__).resolve().parent.parent / "downloads")

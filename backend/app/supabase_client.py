@@ -8,8 +8,13 @@ logger = logging.getLogger(__name__)
 
 supabase_client: Optional[Client] = None
 
-clean_url = (settings.SUPABASE_URL or "").strip().strip("'\"").rstrip("/")
-clean_key = (settings.SUPABASE_SERVICE_ROLE_KEY or "").strip().strip("'\"")
+clean_url = (settings.SUPABASE_URL or os.getenv("SUPABASE_URL", "")).strip().strip("'\"").rstrip("/")
+clean_key = (
+    settings.SUPABASE_SECRET_KEY or
+    settings.SUPABASE_SERVICE_ROLE_KEY or
+    os.getenv("SUPABASE_SECRET_KEY", "") or
+    os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+).strip().strip("'\"")
 
 if clean_url and clean_key:
     try:
