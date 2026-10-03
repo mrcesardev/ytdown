@@ -3,12 +3,12 @@ import { NextRequest, NextResponse } from 'next/server';
 const apiUrl =
   process.env.API_URL ||
   process.env.NEXT_PUBLIC_API_URL ||
-  'http://45.178.180.152:8000';
+  '';
 
 const apiSecret =
   process.env.API_SECRET_KEY ||
   process.env.NEXT_PUBLIC_API_SECRET_KEY ||
-  'ytdown_sec_7d2a1b194b53cae48270df94b45a43d0f0583a8bd8226dfe';
+  '';
 
 export async function POST(req: NextRequest) {
   try {
@@ -17,6 +17,13 @@ export async function POST(req: NextRequest) {
 
     if (!url) {
       return NextResponse.json({ detail: 'URL é obrigatória.' }, { status: 400 });
+    }
+
+    if (!apiUrl) {
+      return NextResponse.json(
+        { detail: 'A variável API_URL (endereço do backend) não está configurada no servidor.' },
+        { status: 500 }
+      );
     }
 
     if (!url.includes('youtube.com/') && !url.includes('youtu.be/')) {

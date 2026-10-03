@@ -22,11 +22,6 @@ services:
       - .env
     environment:
       - REDIS_URL=redis://redis:6379/0
-      - SUPABASE_URL=${SUPABASE_URL:-https://kbfrolcsqnfazjjakfps.supabase.co}
-      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtiZnJvbGNzcW5mYXpqamFrZnBzIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MDg3Nzc0OCwiZXhwIjoyMTA2NDUzNzQ4fQ.nyCjhGuXsDPyVAomAx0kKG3-nVoOxbKeZ72_M5jrIJE}
-      - BASE_URL=${BASE_URL:-http://45.178.180.152:8000}
-      - API_SECRET_KEY=${API_SECRET_KEY:-ytdown_sec_7d2a1b194b53cae48270df94b45a43d0f0583a8bd8226dfe}
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-*}
       - DOWNLOAD_DIR=/app/downloads
     volumes:
       - ./downloads:/app/downloads
@@ -44,9 +39,6 @@ services:
       - .env
     environment:
       - REDIS_URL=redis://redis:6379/0
-      - SUPABASE_URL=${SUPABASE_URL:-https://kbfrolcsqnfazjjakfps.supabase.co}
-      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtiZnJvbGNzcW5mYXpqamFrZnBzIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MDg3Nzc0OCwiZXhwIjoyMTA2NDUzNzQ4fQ.nyCjhGuXsDPyVAomAx0kKG3-nVoOxbKeZ72_M5jrIJE}
-      - BASE_URL=${BASE_URL:-http://45.178.180.152:8000}
       - DOWNLOAD_DIR=/app/downloads
     volumes:
       - ./downloads:/app/downloads

@@ -3,26 +3,26 @@ import { createClient } from '@supabase/supabase-js';
 
 // 1. Resolução de credenciais do Supabase
 const supabaseUrl =
-  process.env.NEXT_PUBLIC_SUPABASE_URL ||
   process.env.SUPABASE_URL ||
-  'https://kbfrolcsqnfazjjakfps.supabase.co';
+  process.env.NEXT_PUBLIC_SUPABASE_URL ||
+  '';
 
 const supabaseKey =
   process.env.SUPABASE_SERVICE_ROLE_KEY ||
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
   process.env.SUPABASE_ANON_KEY ||
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtiZnJvbGNzcW5mYXpqamFrZnBzIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MDg3Nzc0OCwiZXhwIjoyMTA2NDUzNzQ4fQ.nyCjhGuXsDPyVAomAx0kKG3-nVoOxbKeZ72_M5jrIJE';
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  '';
 
 // 2. Resolução de endereço da VPS Backend
 const apiUrl =
   process.env.API_URL ||
   process.env.NEXT_PUBLIC_API_URL ||
-  'http://45.178.180.152:8000';
+  '';
 
 const apiSecret =
   process.env.API_SECRET_KEY ||
   process.env.NEXT_PUBLIC_API_SECRET_KEY ||
-  'ytdown_sec_7d2a1b194b53cae48270df94b45a43d0f0583a8bd8226dfe';
+  '';
 
 export async function POST(req: NextRequest) {
   try {
@@ -30,6 +30,13 @@ export async function POST(req: NextRequest) {
 
     if (!body.url) {
       return NextResponse.json({ detail: 'URL do YouTube é obrigatória.' }, { status: 400 });
+    }
+
+    if (!supabaseUrl || !supabaseKey) {
+      return NextResponse.json(
+        { detail: 'Configuração do banco de dados (Supabase) ausente no servidor. Verifique as variáveis de ambiente.' },
+        { status: 500 }
+      );
     }
 
     const supabaseServer = createClient(supabaseUrl, supabaseKey);
@@ -146,6 +153,13 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const idsParam = searchParams.get('ids') || searchParams.get('id');
     const userId = searchParams.get('user_id');
+
+    if (!supabaseUrl || !supabaseKey) {
+      return NextResponse.json(
+        { detail: 'Configuração do banco de dados (Supabase) ausente no servidor. Verifique as variáveis de ambiente.' },
+        { status: 500 }
+      );
+    }
 
     const supabaseServer = createClient(supabaseUrl, supabaseKey);
 

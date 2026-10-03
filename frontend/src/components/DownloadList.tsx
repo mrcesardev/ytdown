@@ -173,6 +173,14 @@ export default function DownloadList({ userId, activeDownloads }: DownloadListPr
     return `${mb.toFixed(1)} MB`;
   };
 
+  const resolveDownloadUrl = (rawUrl: string) => {
+    const publicApi = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '');
+    if (publicApi && rawUrl.includes('localhost:8000')) {
+      return rawUrl.replace('http://localhost:8000', publicApi);
+    }
+    return rawUrl;
+  };
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center p-8 text-slate-500">
@@ -305,7 +313,7 @@ export default function DownloadList({ userId, activeDownloads }: DownloadListPr
             <div className="flex items-center gap-2 w-full sm:w-auto justify-end border-t sm:border-t-0 pt-3 sm:pt-0 border-slate-800">
               {item.status === 'completed' && item.download_url && (
                 <a
-                  href={item.download_url.replace('http://localhost:8000', 'http://45.178.180.152:8000')}
+                  href={resolveDownloadUrl(item.download_url)}
                   download
                   target="_blank"
                   rel="noopener noreferrer"
