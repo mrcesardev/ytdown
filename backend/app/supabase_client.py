@@ -1,4 +1,5 @@
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 from supabase import create_client, Client
