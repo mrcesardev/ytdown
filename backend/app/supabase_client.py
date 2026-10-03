@@ -8,17 +8,18 @@ logger = logging.getLogger(__name__)
 
 supabase_client: Optional[Client] = None
 
-if settings.SUPABASE_URL and settings.SUPABASE_SERVICE_ROLE_KEY:
+clean_url = (settings.SUPABASE_URL or "").strip().strip("'\"").rstrip("/")
+clean_key = (settings.SUPABASE_SERVICE_ROLE_KEY or "").strip().strip("'\"")
+
+if clean_url and clean_key:
     try:
-        supabase_client = create_client(
-            settings.SUPABASE_URL,
-            settings.SUPABASE_SERVICE_ROLE_KEY
-        )
-        logger.info("Supabase client initialized successfully.")
+        supabase_client = create_client(clean_url, clean_key)
+        masked_key = f"{clean_key[:10]}...{clean_key[-6:]}" if len(clean_key) > 16 else clean_key
+        logger.info(f"Cliente Supabase inicializado com URL '{clean_url}' e chave ({masked_key}, len={len(clean_key)}).")
     except Exception as e:
-        logger.error(f"Failed to initialize Supabase client: {e}")
+        logger.error(f"Falha ao inicializar cliente Supabase: {e}")
 else:
-    logger.warning("Supabase credentials not configured. Running without direct DB sync.")
+    logger.warning("Credenciais do Supabase não configuradas ou vazias. Executando sem sincronização direta com DB.")
 
 
 def get_supabase() -> Optional[Client]:
