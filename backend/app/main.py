@@ -1,6 +1,8 @@
 import os
+import re
 import uuid
 import logging
+from urllib.parse import quote
 from pathlib import Path
 from typing import Optional
 from fastapi import FastAPI, HTTPException, Header, Depends, BackgroundTasks
@@ -212,11 +214,22 @@ def get_download_status(download_id: str):
     )
 
 
-@app.get("/api/files/{filename}")
+@app.get("/api/files/{filename:path}")
 def download_file(filename: str):
     """Entrega o arquivo baixado com suporte a download direto no navegador."""
     safe_name = os.path.basename(filename)
     file_path = Path(settings.DOWNLOAD_DIR) / safe_name
+
+    # Fallback resiliente: se o arquivo exato não for encontrado por variação de encoding/caracteres,
+    # procura por qualquer arquivo que comece com o prefixo do ID do download
+    if not file_path.exists() or not file_path.is_file():
+        uuid_match = re.match(r"^([a-f0-9\-]{36})_", safe_name)
+        if uuid_match:
+            download_id = uuid_match.group(1)
+            matching = list(Path(settings.DOWNLOAD_DIR).glob(f"{download_id}_*"))
+            if matching and matching[0].is_file():
+                file_path = matching[0]
+                safe_name = file_path.name
 
     if not file_path.exists() or not file_path.is_file():
         raise HTTPException(status_code=404, detail="Arquivo não encontrado ou já expirado pelo sistema de limpeza.")
@@ -228,11 +241,22 @@ def download_file(filename: str):
     else:
         media_type = "video/mp4"
 
+    # Remove o prefixo do UUID do nome do arquivo salvo no dispositivo do usuário
+    display_name = re.sub(r"^[a-f0-9\-]{36}_", "", safe_name) or safe_name
+
+    # Formata cabeçalho Content-Disposition 100% compatível com RFC 6266 / RFC 5987.
+    # Uvicorn/Starlette exigem que headers brutos sejam codificáveis em latin-1.
+    # ascii_fallback garante compatibilidade, e filename*=UTF-8'' preserva acentuação completa nos navegadores.
+    ascii_fallback = re.sub(r"[^\x20-\x7E]", "", display_name).replace('"', "").strip()
+    if not ascii_fallback:
+        ascii_fallback = "download" + Path(safe_name).suffix
+    encoded_name = quote(display_name, encoding="utf-8")
+    content_disposition = f'attachment; filename="{ascii_fallback}"; filename*=UTF-8\'\'{encoded_name}'
+
     return FileResponse(
         path=str(file_path),
         media_type=media_type,
-        filename=safe_name,
-        headers={"Content-Disposition": f'attachment; filename="{safe_name}"'}
+        headers={"Content-Disposition": content_disposition}
     )
 
 

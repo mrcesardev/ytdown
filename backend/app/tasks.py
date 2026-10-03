@@ -7,6 +7,7 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any, Optional
+from urllib.parse import quote
 
 import yt_dlp
 from app.celery_app import celery_app
@@ -256,7 +257,7 @@ def execute_download(
 
         filename = final_file.name
         file_size = final_file.stat().st_size
-        download_url = f"{settings.BASE_URL.rstrip('/')}/api/files/{filename}"
+        download_url = f"{settings.BASE_URL.rstrip('/')}/api/files/{quote(filename)}"
 
         update_download_record(download_id, {
             "status": "completed",
