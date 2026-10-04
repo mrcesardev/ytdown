@@ -1,0 +1,9 @@
+# Netscape HTTP Cookie File
+# http://curl.haxx.se/rfc/cookie_spec.html
+# Este arquivo é gerado automaticamente por extensões como "Get cookies.txt LOCALLY"
+# ou exportado do seu navegador (Chrome/Firefox/Edge) logado no Instagram ou YouTube.
+#
+# Para utilizar, renomeie este arquivo para "cookies.txt" na pasta backend
+# ou aponte a variável COOKIES_FILE=/caminho/para/cookies.txt no seu .env.
+#
+# .instagram.com	TRUE	/	TRUE	1799999999	sessionid	SEU_SESSION_ID_AQUI

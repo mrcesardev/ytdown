@@ -130,7 +130,7 @@ export default function DownloadForm({ userId, onDownloadStarted }: DownloadForm
     }
 
     const trimmed = url.trim();
-    if (trimmed && isYouTubeUrl(trimmed)) {
+    if (trimmed && isSupportedMediaUrl(trimmed)) {
       debounceTimeoutRef.current = setTimeout(() => {
         fetchMediaDetails(trimmed);
       }, 700);
@@ -198,7 +198,7 @@ export default function DownloadForm({ userId, onDownloadStarted }: DownloadForm
     if (!cleanUrl) return;
 
     if (!isSupportedMediaUrl(cleanUrl)) {
-      setError('Por favor, insira um link válido do YouTube ou TikTok.');
+      setError('Por favor, insira um link válido do YouTube, TikTok ou Instagram.');
       return;
     }
 
@@ -309,12 +309,12 @@ export default function DownloadForm({ userId, onDownloadStarted }: DownloadForm
 
           <div className="text-center mb-6">
             <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
-              Baixe Vídeos do YouTube e TikTok
+              Baixe Vídeos do YouTube, TikTok e Instagram
             </h1>
             <p className="text-slate-400 text-sm mt-2 max-w-lg mx-auto">
               {userId
-                ? 'Sua conta está ativa com downloads em 320 kbps, playlists em ZIP e TikTok sem marca d\'água.'
-                : 'Gratuito, direto e sem anúncios. Baixe do YouTube ou TikTok sem marca d\'água em MP4 ou MP3.'}
+                ? 'Sua conta está ativa com downloads em 320 kbps, playlists em ZIP, TikTok e Instagram sem marca d\'água.'
+                : 'Gratuito, direto e sem anúncios. Baixe do YouTube, TikTok ou Instagram sem marca d\'água em MP4 ou MP3.'}
             </p>
           </div>
 
@@ -341,7 +341,7 @@ export default function DownloadForm({ userId, onDownloadStarted }: DownloadForm
                 required
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
-                placeholder="Cole o link do YouTube ou TikTok..."
+                placeholder="Cole o link do YouTube, TikTok ou Instagram..."
                 className="w-full pl-12 pr-12 py-4 bg-slate-950/90 border border-slate-700/80 rounded-2xl text-white placeholder-slate-500 text-base focus:outline-none focus:ring-2 focus:ring-rose-500/60 focus:border-rose-500 transition-all shadow-inner"
               />
 
@@ -397,6 +397,11 @@ export default function DownloadForm({ userId, onDownloadStarted }: DownloadForm
                       <span className="text-[10px] font-bold uppercase px-2.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 flex items-center gap-1">
                         <Sparkles className="w-3 h-3 text-cyan-400" />
                         TikTok Sem Marca d'Água
+                      </span>
+                    ) : getMediaPlatform(mediaInfo.url) === 'instagram' ? (
+                      <span className="text-[10px] font-bold uppercase px-2.5 py-0.5 rounded-full bg-gradient-to-r from-purple-500/20 via-pink-500/20 to-rose-500/20 text-pink-300 border border-pink-500/30 flex items-center gap-1">
+                        <Sparkles className="w-3 h-3 text-pink-400" />
+                        Instagram Sem Marca d'Água
                       </span>
                     ) : (
                       <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-rose-500/15 text-rose-400 border border-rose-500/20">
@@ -603,7 +608,7 @@ export default function DownloadForm({ userId, onDownloadStarted }: DownloadForm
                     <div className="text-[11px] opacity-70">
                       {mediaInfo?.is_playlist
                         ? 'Faixas em MP3'
-                        : getMediaPlatform(mediaInfo?.url || url) === 'tiktok'
+                        : getMediaPlatform(mediaInfo?.url || url) === 'tiktok' || getMediaPlatform(mediaInfo?.url || url) === 'instagram'
                         ? 'Música / Áudio original'
                         : 'Apenas o áudio'}
                     </div>
@@ -623,7 +628,7 @@ export default function DownloadForm({ userId, onDownloadStarted }: DownloadForm
                   <div className="text-left">
                     <div className="font-semibold text-sm">Vídeo MP4</div>
                     <div className="text-[11px] opacity-70">
-                      {getMediaPlatform(mediaInfo?.url || url) === 'tiktok'
+                      {getMediaPlatform(mediaInfo?.url || url) === 'tiktok' || getMediaPlatform(mediaInfo?.url || url) === 'instagram'
                         ? 'Sem marca d\'água'
                         : 'Vídeo com som'}
                     </div>

@@ -1,13 +1,16 @@
-# YtDown 🎬🎧
+# YtDown 🎬🎧📱
 
-Aplicação de extração e conversão de mídias do YouTube (estilo *stream-ripper* como o Yout.com), arquitetada para alta eficiência e baixo custo.
+Aplicação moderna de extração e conversão de mídias do **YouTube**, **TikTok** e **Instagram** (estilo *stream-ripper* como o Yout.com), arquitetada para alta performance, baixo custo e sem anúncios.
 
 ### 🌟 Modelo de Acesso e Funcionalidades
-* **Página Inicial Pública (Sem Login)**: Qualquer visitante pode colar o link de um vídeo e baixar diretamente em **Áudio MP3 (128 kbps)** ou **Vídeo MP4 (720p)** de forma instantânea e sem propagandas.
+* **Página Inicial Pública (Sem Login)**: Qualquer visitante pode colar o link e baixar diretamente:
+  * 🎬 **YouTube**: Vídeos em MP4 (720p) ou Áudio em MP3 (128 kbps).
+  * ⚡ **TikTok**: Vídeos em MP4 **sem marca d'água** ou Áudio MP3 da trilha sonora original.
+  * 📸 **Instagram**: Reels, Posts e Vídeos em MP4 ou extração de Áudio MP3.
 * **Recursos Exclusivos (Com Cadastro Gratuito)**:
   * 📦 **Download de Playlists Completas**: Baixa todos os vídeos ou músicas de uma lista do YouTube compactados em um único arquivo `.zip`.
-  * 🎵 **Áudio em Alta Fidelidade (320 kbps)**: Conversão com máxima nitidez acústica.
-  * 🕒 **Histórico de Downloads**: Salva os arquivos e links convertidos na conta do usuário.
+  * 🎵 **Áudio em Alta Fidelidade (320 kbps)**: Conversão acústica com máxima fidelidade.
+  * 🕒 **Histórico de Downloads**: Salva os arquivos e links convertidos na conta do usuário com sincronização em tempo real.
 
 ---
 
@@ -114,6 +117,7 @@ YtDown/
    - `SUPABASE_SERVICE_ROLE_KEY`: Chave de serviço do Supabase.
    - `BASE_URL`: URL da sua API (ex: `https://api.seudominio.com` ou `http://IP_DA_VPS:8000`).
    - `API_SECRET_KEY`: Uma senha/token segura para comunicação com a Vercel.
+   - `COOKIES_FILE` *(Opcional)*: Caminho para arquivo `cookies.txt` (ex: `/opt/ytdown/backend/cookies.txt`). Permite contornar a exigência de login do Instagram e restrições de idade do YouTube. Basta exportar os cookies de uma conta usando a extensão de navegador *"Get cookies.txt LOCALLY"*.
 
 5. Suba os containers com Docker Compose:
    ```bash

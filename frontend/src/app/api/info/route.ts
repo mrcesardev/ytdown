@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (!isSupportedMediaUrl(rawUrl)) {
-      return NextResponse.json({ detail: 'URL inválida. Suportamos links do YouTube e TikTok.' }, { status: 400 });
+      return NextResponse.json({ detail: 'URL inválida. Suportamos links do YouTube, TikTok e Instagram.' }, { status: 400 });
     }
 
     const url = cleanMediaUrl(rawUrl);

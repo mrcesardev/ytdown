@@ -29,6 +29,10 @@ ENV/
 backend/downloads/*
 !backend/downloads/.gitkeep
 
+# Cookies de autenticação (privados)
+*cookies.txt
+!*cookies.txt.example
+
 # Logs
 *.log
 npm-debug.log*

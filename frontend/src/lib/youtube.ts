@@ -1,5 +1,5 @@
 /**
- * Utilitários para normalização e detecção de URLs do YouTube e TikTok.
+ * Utilitários para normalização e detecção de URLs do YouTube, TikTok e Instagram.
  */
 
 export function isYouTubeUrl(inputUrl: string): boolean {
@@ -19,13 +19,27 @@ export function isTikTokUrl(inputUrl: string): boolean {
   );
 }
 
-export function isSupportedMediaUrl(inputUrl: string): boolean {
-  return isYouTubeUrl(inputUrl) || isTikTokUrl(inputUrl);
+export function isInstagramUrl(inputUrl: string): boolean {
+  if (!inputUrl) return false;
+  const trimmed = inputUrl.trim().toLowerCase();
+  return (
+    trimmed.includes('instagram.com/reel/') ||
+    trimmed.includes('instagram.com/reels/') ||
+    trimmed.includes('instagram.com/p/') ||
+    trimmed.includes('instagram.com/tv/') ||
+    trimmed.includes('instagr.am/p/') ||
+    trimmed.includes('instagr.am/reel/')
+  );
 }
 
-export function getMediaPlatform(inputUrl: string): 'youtube' | 'tiktok' | 'unknown' {
+export function isSupportedMediaUrl(inputUrl: string): boolean {
+  return isYouTubeUrl(inputUrl) || isTikTokUrl(inputUrl) || isInstagramUrl(inputUrl);
+}
+
+export function getMediaPlatform(inputUrl: string): 'youtube' | 'tiktok' | 'instagram' | 'unknown' {
   if (isYouTubeUrl(inputUrl)) return 'youtube';
   if (isTikTokUrl(inputUrl)) return 'tiktok';
+  if (isInstagramUrl(inputUrl)) return 'instagram';
   return 'unknown';
 }
 
@@ -92,11 +106,26 @@ export function cleanYouTubeUrl(inputUrl: string): string {
   }
 }
 
+export function cleanInstagramUrl(inputUrl: string): string {
+  if (!inputUrl) return '';
+  const trimmed = inputUrl.trim();
+  try {
+    const urlObj = new URL(trimmed);
+    // Remove query params de tracking (?igsh=..., &utm_source=...) mantendo o caminho limpo
+    return `${urlObj.origin}${urlObj.pathname}`;
+  } catch {
+    return trimmed.split('?')[0];
+  }
+}
+
 export function cleanMediaUrl(inputUrl: string): string {
   if (!inputUrl) return '';
   const trimmed = inputUrl.trim();
   if (isYouTubeUrl(trimmed)) {
     return cleanYouTubeUrl(trimmed);
+  }
+  if (isInstagramUrl(trimmed)) {
+    return cleanInstagramUrl(trimmed);
   }
   return trimmed;
 }

@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { supabase, MediaDownload } from '@/lib/supabase';
+import { getMediaPlatform } from '@/lib/youtube';
 import {
   Music,
   Film,
@@ -235,6 +236,22 @@ export default function DownloadList({ userId, activeDownloads }: DownloadListPr
 
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  {getMediaPlatform(item.original_url) === 'tiktok' && (
+                    <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/25">
+                      TikTok
+                    </span>
+                  )}
+                  {getMediaPlatform(item.original_url) === 'instagram' && (
+                    <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-pink-500/15 text-pink-300 border border-pink-500/25">
+                      Instagram
+                    </span>
+                  )}
+                  {getMediaPlatform(item.original_url) === 'youtube' && (
+                    <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-rose-500/15 text-rose-300 border border-rose-500/25">
+                      YouTube
+                    </span>
+                  )}
+
                   <span
                     className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${
                       item.is_playlist

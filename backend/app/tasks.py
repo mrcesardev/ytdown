@@ -176,6 +176,213 @@ def download_tiktok_media(
     }
 
 
+def is_instagram_url(url: str) -> bool:
+    """Detecta se a URL pertence ao Instagram."""
+    if not url:
+        return False
+    u = url.lower().strip()
+    return "instagram.com" in u or "instagr.am" in u
+
+
+def clean_instagram_url(url: str) -> str:
+    """Remove parâmetros de rastreamento do Instagram (igsh, utm_source, etc.)."""
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(url.strip())
+        return f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+    except Exception:
+        return url.split("?")[0].strip()
+
+
+def extract_instagram_info(url: str) -> Dict[str, Any]:
+    """Extrai metadados do Reels ou Post do Instagram via yt-dlp (com suporte a cookies se disponíveis)."""
+    clean_url = clean_instagram_url(url)
+    ydl_opts: Dict[str, Any] = {
+        "skip_download": True,
+        "quiet": True,
+        "no_warnings": True,
+        "socket_timeout": 15,
+    }
+    cookies_path = settings.resolved_cookies_file
+    if cookies_path:
+        ydl_opts["cookiefile"] = cookies_path
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(clean_url, download=False)
+            if not info:
+                raise ValueError("Não foi possível extrair dados desta publicação do Instagram.")
+
+            title = info.get("title") or info.get("description") or f"Instagram_{info.get('id', 'media')}"
+            if len(title) > 90:
+                title = title[:90] + "..."
+            duration = info.get("duration")
+            uploader = info.get("uploader") or info.get("channel") or "Instagram"
+            thumbnail = info.get("thumbnail")
+            if not thumbnail and info.get("thumbnails"):
+                thumbnail = info.get("thumbnails")[-1].get("url")
+
+            def format_duration(seconds: Optional[int]) -> Optional[str]:
+                if not seconds:
+                    return None
+                seconds = int(seconds)
+                mins, secs = divmod(seconds, 60)
+                hrs, mins = divmod(mins, 60)
+                if hrs > 0:
+                    return f"{hrs:d}:{mins:02d}:{secs:02d}"
+                return f"{mins:02d}:{secs:02d}"
+
+            return {
+                "url": clean_url,
+                "title": title,
+                "thumbnail": thumbnail,
+                "duration": duration,
+                "duration_formatted": format_duration(duration),
+                "uploader": uploader,
+                "is_playlist": False,
+                "entries": None,
+                "total_entries": 1,
+            }
+    except Exception as e:
+        err_msg = str(e)
+        if "empty media response" in err_msg.lower() or "login" in err_msg.lower() or "granting access" in err_msg.lower():
+            raise ValueError(
+                "O Instagram requer autenticação para acessar esta mídia. "
+                "Para liberar downloads do Instagram, insira um arquivo cookies.txt na pasta backend ou configure a variável COOKIES_FILE."
+            )
+        raise ValueError(f"Erro ao processar link do Instagram: {err_msg}")
+
+
+def download_instagram_media(
+    download_id: str,
+    url: str,
+    format_type: str,
+    quality: str,
+    download_dir: Path,
+    task_instance: Optional[Any] = None
+) -> Dict[str, Any]:
+    """Baixa Reel/Post do Instagram em MP4 ou extrai em áudio MP3."""
+    clean_url = clean_instagram_url(url)
+    update_download_record(download_id, {
+        "status": "processing",
+        "progress": 15
+    })
+
+    cookies_path = settings.resolved_cookies_file
+    output_template = str(download_dir / f"{download_id}_%(title).100s.%(ext)s")
+
+    last_progress_time = 0.0
+    last_progress_val = 0
+
+    def progress_hook(d: Dict[str, Any]):
+        nonlocal last_progress_time, last_progress_val
+        if d.get("status") == "downloading":
+            now = time.time()
+            total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
+            downloaded = d.get("downloaded_bytes") or 0
+            if total > 0:
+                percent = int((downloaded / total) * 100)
+                if (percent - last_progress_val >= 10 or (now - last_progress_time > 2.0)) and percent > last_progress_val:
+                    last_progress_val = percent
+                    last_progress_time = now
+                    update_download_record(download_id, {"progress": min(max(percent, 20), 90)})
+                    if task_instance:
+                        task_instance.update_state(state="PROGRESS", meta={"progress": percent})
+
+    ydl_opts: Dict[str, Any] = {
+        "outtmpl": output_template,
+        "progress_hooks": [progress_hook],
+        "quiet": True,
+        "no_warnings": True,
+        "socket_timeout": 30,
+    }
+    if cookies_path:
+        ydl_opts["cookiefile"] = cookies_path
+
+    if format_type == "mp3":
+        audio_bitrate = "320" if quality == "high" else "128"
+        ydl_opts.update({
+            "format": "bestaudio/best",
+            "postprocessors": [
+                {
+                    "key": "FFmpegExtractAudio",
+                    "preferredcodec": "mp3",
+                    "preferredquality": audio_bitrate,
+                },
+                {"key": "FFmpegMetadata"},
+            ],
+        })
+    else:
+        ydl_opts.update({
+            "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+            "merge_output_format": "mp4",
+        })
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(clean_url, download=True)
+            if not info:
+                raise ValueError("Falha ao baixar mídia do Instagram.")
+
+            raw_title = info.get("title") or info.get("description") or f"Instagram_{download_id[:8]}"
+            if len(raw_title) > 90:
+                raw_title = raw_title[:90] + "..."
+            thumbnail = info.get("thumbnail")
+            target_ext = "mp3" if format_type == "mp3" else "mp4"
+
+            # Localiza o arquivo baixado
+            matching_files = list(download_dir.glob(f"{download_id}_*.{target_ext}"))
+            if not matching_files:
+                matching_files = list(download_dir.glob(f"{download_id}_*.*"))
+
+            if not matching_files:
+                raise FileNotFoundError("Arquivo baixado do Instagram não foi localizado.")
+
+            final_file = matching_files[0]
+            filename = final_file.name
+            file_size = final_file.stat().st_size
+            download_url = f"{settings.BASE_URL.rstrip('/')}/api/files/{quote(filename)}"
+
+            update_download_record(download_id, {
+                "title": raw_title,
+                "thumbnail": thumbnail,
+                "status": "completed",
+                "progress": 100,
+                "filename": filename,
+                "file_path": str(final_file),
+                "file_size": file_size,
+                "download_url": download_url,
+                "completed_at": datetime.now(timezone.utc).isoformat()
+            })
+
+            logger.info(f"Download Instagram {download_id} concluído com sucesso: {filename} ({file_size} bytes)")
+            return {
+                "id": download_id,
+                "status": "completed",
+                "title": raw_title,
+                "filename": filename,
+                "download_url": download_url,
+                "file_size": file_size
+            }
+    except Exception as e:
+        err_msg = str(e)
+        if "empty media response" in err_msg.lower() or "login" in err_msg.lower() or "granting access" in err_msg.lower():
+            friendly_err = (
+                "O Instagram exige cookies de autenticação para este conteúdo. "
+                "Adicione seu cookies.txt na pasta backend para baixar qualquer Reel ou vídeo do Instagram."
+            )
+            update_download_record(download_id, {
+                "status": "failed",
+                "error_message": friendly_err
+            })
+            raise ValueError(friendly_err)
+        update_download_record(download_id, {
+            "status": "failed",
+            "error_message": err_msg
+        })
+        raise
+
+
 def clean_youtube_url(url: str) -> str:
     """Remove parâmetros de mix/rádio automático (RD..., UL...) preservando o vídeo principal."""
     try:
@@ -201,6 +408,8 @@ def extract_media_info(url: str) -> Dict[str, Any]:
     """Extrai informações da mídia (vídeo ou playlist) rapidamente sem baixar."""
     if is_tiktok_url(url):
         return extract_tiktok_info(url)
+    if is_instagram_url(url):
+        return extract_instagram_info(url)
 
     url = clean_youtube_url(url)
     ydl_opts: Dict[str, Any] = {
@@ -211,6 +420,9 @@ def extract_media_info(url: str) -> Dict[str, Any]:
         "socket_timeout": 10,
         "playlistend": 15,  # Garante retorno rápido em playlists grandes
     }
+    cookies_path = settings.resolved_cookies_file
+    if cookies_path:
+        ydl_opts["cookiefile"] = cookies_path
 
     def format_duration(seconds: Optional[int]) -> Optional[str]:
         if not seconds:
@@ -319,6 +531,18 @@ def execute_download(
             task_instance=task_instance,
         )
 
+    if is_instagram_url(url):
+        download_dir = Path(settings.DOWNLOAD_DIR)
+        download_dir.mkdir(parents=True, exist_ok=True)
+        return download_instagram_media(
+            download_id=download_id,
+            url=url,
+            format_type=format_type,
+            quality=quality,
+            download_dir=download_dir,
+            task_instance=task_instance,
+        )
+
     url = clean_youtube_url(url)
     if is_playlist and ("list=" not in url or "list=RD" in url or "list=UL" in url):
         is_playlist = False
@@ -401,6 +625,10 @@ def execute_download(
         ydl_opts["postprocessors"] = audio_opts
     if format_type == "mp4":
         ydl_opts["merge_output_format"] = "mp4"
+
+    cookies_path = settings.resolved_cookies_file
+    if cookies_path:
+        ydl_opts["cookiefile"] = cookies_path
 
     try:
         title = playlist_title or ("playlist" if is_playlist else "video")

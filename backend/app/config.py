@@ -22,6 +22,18 @@ class Settings(BaseSettings):
     DOWNLOAD_DIR: str = str(Path(__file__).resolve().parent.parent / "downloads")
     MAX_FILE_AGE_HOURS: int = 2
 
+    # Cookies de autenticação opcionais (para Instagram e YouTube restrito)
+    COOKIES_FILE: str = ""
+
+    @property
+    def resolved_cookies_file(self) -> str | None:
+        if self.COOKIES_FILE and os.path.exists(self.COOKIES_FILE):
+            return self.COOKIES_FILE
+        local_cookies = Path(__file__).resolve().parent.parent / "cookies.txt"
+        if local_cookies.exists():
+            return str(local_cookies)
+        return None
+
     class Config:
         env_file = ".env"
         extra = "ignore"
