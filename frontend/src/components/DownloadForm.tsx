@@ -11,6 +11,8 @@ import {
   getMediaPlatform,
 } from '@/lib/youtube';
 import AuthModal from '@/components/AuthModal';
+import RewardedDownloadModal from '@/components/RewardedDownloadModal';
+import { MONETIZATION_CONFIG } from '@/config/monetization';
 import {
   Music,
   Film,
@@ -74,6 +76,10 @@ export default function DownloadForm({ userId, onDownloadStarted }: DownloadForm
   // Controle do modal de cadastro
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authModalReason, setAuthModalReason] = useState<'playlist' | 'high_quality'>('high_quality');
+
+  // Controle do modal de download com recompensa (anúncio para não logados)
+  const [rewardedModalOpen, setRewardedModalOpen] = useState(false);
+  const [rewardedItem, setRewardedItem] = useState<MediaDownload | null>(null);
 
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -286,6 +292,12 @@ export default function DownloadForm({ userId, onDownloadStarted }: DownloadForm
       setSelectedIndices([]);
       if (onDownloadStarted) {
         onDownloadStarted(createdRecord);
+      }
+
+      // Se o usuário não estiver logado, exibe o modal com contador/anúncio de recompensa
+      if (!userId && MONETIZATION_CONFIG.rewardedAds.enabled) {
+        setRewardedItem(createdRecord);
+        setRewardedModalOpen(true);
       }
     } catch (err: any) {
       setError(err.message || 'Erro ao iniciar o download.');
@@ -732,6 +744,12 @@ export default function DownloadForm({ userId, onDownloadStarted }: DownloadForm
         isOpen={authModalOpen}
         onClose={() => setAuthModalOpen(false)}
         reason={authModalReason}
+      />
+
+      <RewardedDownloadModal
+        isOpen={rewardedModalOpen}
+        onClose={() => setRewardedModalOpen(false)}
+        downloadItem={rewardedItem}
       />
     </>
   );

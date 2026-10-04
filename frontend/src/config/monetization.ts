@@ -24,4 +24,11 @@ export const MONETIZATION_CONFIG = {
     adsterraBannerKey: process.env.NEXT_PUBLIC_ADSTERRA_BANNER_KEY || '',
     monetagTagId: process.env.NEXT_PUBLIC_MONETAG_TAG_ID || '',
   },
+
+  // Download com Recompensa / Rewarded Ad para usuários não logados
+  rewardedAds: {
+    enabled: process.env.NEXT_PUBLIC_REWARDED_ADS_ENABLED !== 'false', // Ativo por padrão
+    countdownSeconds: Number(process.env.NEXT_PUBLIC_REWARDED_COUNTDOWN) || 6,
+    adScriptUrl: process.env.NEXT_PUBLIC_REWARDED_SCRIPT_URL || '',
+  },
 };
