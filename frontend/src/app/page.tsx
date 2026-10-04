@@ -5,11 +5,14 @@ import { supabase, MediaDownload } from '@/lib/supabase';
 import Navbar from '@/components/Navbar';
 import DownloadForm from '@/components/DownloadForm';
 import DownloadList from '@/components/DownloadList';
-import { Sparkles, Shield, Zap } from 'lucide-react';
+import DonationModal from '@/components/DonationModal';
+import AdBanner from '@/components/AdBanner';
+import { Sparkles, Shield, Zap, Heart } from 'lucide-react';
 
 export default function HomePage() {
   const [user, setUser] = useState<any>(null);
   const [activeDownloads, setActiveDownloads] = useState<MediaDownload[]>([]);
+  const [isDonationOpen, setIsDonationOpen] = useState(false);
 
   useEffect(() => {
     // 1. Verifica se há usuário logado (sem bloquear quem não estiver)
@@ -44,7 +47,10 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-50 flex flex-col selection:bg-rose-500 selection:text-white">
-      <Navbar userEmail={user?.email || null} />
+      <Navbar
+        userEmail={user?.email || null}
+        onOpenDonation={() => setIsDonationOpen(true)}
+      />
 
       <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-8 sm:py-12 space-y-10">
         {/* Formulário Principal de Download */}
@@ -52,6 +58,9 @@ export default function HomePage() {
           userId={user?.id || null}
           onDownloadStarted={handleDownloadStarted}
         />
+
+        {/* Slot de Anúncio Nativo / Apoio ao Projeto */}
+        <AdBanner onOpenDonation={() => setIsDonationOpen(true)} />
 
         {/* Lista de Downloads em Andamento e Histórico */}
         <DownloadList
@@ -87,9 +96,27 @@ export default function HomePage() {
         </div>
       </main>
 
-      <footer className="border-t border-slate-900 py-6 text-center text-xs text-slate-500">
-        YtDown &copy; {new Date().getFullYear()} &bull; Conversor de Mídia Pessoal &bull; VPS Absam.io
+      <footer className="border-t border-slate-900 py-6 px-4 text-center text-xs text-slate-500 space-y-2">
+        <div className="flex items-center justify-center gap-2">
+          <span>YtDown &copy; {new Date().getFullYear()} &bull; Conversor de Mídia Pessoal &bull; VPS Absam.io</span>
+        </div>
+        <div>
+          <button
+            type="button"
+            onClick={() => setIsDonationOpen(true)}
+            className="inline-flex items-center gap-1.5 text-slate-400 hover:text-rose-400 transition-colors font-medium hover:underline"
+          >
+            <Heart className="w-3.5 h-3.5 text-rose-500 fill-rose-500/20" />
+            <span>Gosta do projeto? Ajude a manter os servidores com uma doação via PIX</span>
+          </button>
+        </div>
       </footer>
+
+      {/* Modal de Doação / Chave PIX */}
+      <DonationModal
+        isOpen={isDonationOpen}
+        onClose={() => setIsDonationOpen(false)}
+      />
     </div>
   );
 }

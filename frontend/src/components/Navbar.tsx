@@ -4,13 +4,14 @@ import React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { PlaySquare, LogOut, User, Sparkles, LogIn } from 'lucide-react';
+import { PlaySquare, LogOut, User, Sparkles, LogIn, Heart } from 'lucide-react';
 
 interface NavbarProps {
   userEmail?: string | null;
+  onOpenDonation?: () => void;
 }
 
-export default function Navbar({ userEmail }: NavbarProps) {
+export default function Navbar({ userEmail, onOpenDonation }: NavbarProps) {
   const router = useRouter();
 
   const handleSignOut = async () => {
@@ -36,6 +37,18 @@ export default function Navbar({ userEmail }: NavbarProps) {
         </Link>
 
         <div className="flex items-center gap-3">
+          {onOpenDonation && (
+            <button
+              type="button"
+              onClick={onOpenDonation}
+              className="px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-all shadow-sm"
+              title="Apoie os custos do servidor com PIX"
+            >
+              <Heart className="w-3.5 h-3.5 text-rose-400 fill-rose-500/20" />
+              <span>Apoiar</span>
+            </button>
+          )}
+
           {userEmail ? (
             <>
               <div className="hidden sm:flex items-center gap-2 text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-full font-medium">
