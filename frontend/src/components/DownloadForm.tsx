@@ -2,7 +2,14 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase, MediaDownload } from '@/lib/supabase';
-import { isYouTubeUrl, isYouTubePlaylist, cleanYouTubeUrl } from '@/lib/youtube';
+import {
+  isYouTubeUrl,
+  isTikTokUrl,
+  isSupportedMediaUrl,
+  isYouTubePlaylist,
+  cleanMediaUrl,
+  getMediaPlatform,
+} from '@/lib/youtube';
 import AuthModal from '@/components/AuthModal';
 import {
   Music,
@@ -70,15 +77,12 @@ export default function DownloadForm({ userId, onDownloadStarted }: DownloadForm
 
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const isYouTubeUrl = (inputUrl: string) =>
-    inputUrl.includes('youtube.com/') || inputUrl.includes('youtu.be/');
-
   const isPlaylistUrl = (inputUrl: string) => isYouTubePlaylist(inputUrl);
 
   // Busca metadados da URL
   const fetchMediaDetails = async (targetUrl: string) => {
-    const cleaned = cleanYouTubeUrl(targetUrl.trim());
-    if (!cleaned || !isYouTubeUrl(cleaned)) {
+    const cleaned = cleanMediaUrl(targetUrl.trim());
+    if (!cleaned || !isSupportedMediaUrl(cleaned)) {
       setMediaInfo(null);
       return;
     }
@@ -190,15 +194,16 @@ export default function DownloadForm({ userId, onDownloadStarted }: DownloadForm
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanUrl = cleanYouTubeUrl(url.trim());
+    const cleanUrl = cleanMediaUrl(url.trim());
     if (!cleanUrl) return;
 
-    if (!isYouTubeUrl(cleanUrl)) {
-      setError('Por favor, insira um link válido do YouTube.');
+    if (!isSupportedMediaUrl(cleanUrl)) {
+      setError('Por favor, insira um link válido do YouTube ou TikTok.');
       return;
     }
 
-    const isPlaylist = mediaInfo ? mediaInfo.is_playlist : isPlaylistUrl(cleanUrl);
+    const platform = getMediaPlatform(cleanUrl);
+    const isPlaylist = platform === 'youtube' && (mediaInfo ? mediaInfo.is_playlist : isPlaylistUrl(cleanUrl));
 
     // Validação de Playlist
     if (isPlaylist) {
@@ -304,12 +309,12 @@ export default function DownloadForm({ userId, onDownloadStarted }: DownloadForm
 
           <div className="text-center mb-6">
             <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
-              Baixe Vídeos e Músicas do YouTube
+              Baixe Vídeos do YouTube e TikTok
             </h1>
             <p className="text-slate-400 text-sm mt-2 max-w-lg mx-auto">
               {userId
-                ? 'Sua conta está ativa com downloads em 320 kbps e suporte a playlists em ZIP.'
-                : 'Gratuito, direto e sem anúncios. Cole o link e visualize os detalhes antes de baixar.'}
+                ? 'Sua conta está ativa com downloads em 320 kbps, playlists em ZIP e TikTok sem marca d\'água.'
+                : 'Gratuito, direto e sem anúncios. Baixe do YouTube ou TikTok sem marca d\'água em MP4 ou MP3.'}
             </p>
           </div>
 
@@ -336,7 +341,7 @@ export default function DownloadForm({ userId, onDownloadStarted }: DownloadForm
                 required
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
-                placeholder="Cole o link do vídeo ou playlist do YouTube..."
+                placeholder="Cole o link do YouTube ou TikTok..."
                 className="w-full pl-12 pr-12 py-4 bg-slate-950/90 border border-slate-700/80 rounded-2xl text-white placeholder-slate-500 text-base focus:outline-none focus:ring-2 focus:ring-rose-500/60 focus:border-rose-500 transition-all shadow-inner"
               />
 
@@ -356,7 +361,7 @@ export default function DownloadForm({ userId, onDownloadStarted }: DownloadForm
             {loadingInfo && (
               <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800/80 flex items-center gap-3 text-slate-400 text-sm animate-pulse">
                 <Loader2 className="w-5 h-5 animate-spin text-rose-500" />
-                <span>Buscando capa, duração e faixas no YouTube...</span>
+                <span>Buscando capa, duração e informações da mídia...</span>
               </div>
             )}
 
@@ -388,9 +393,16 @@ export default function DownloadForm({ userId, onDownloadStarted }: DownloadForm
                 {/* Detalhes */}
                 <div className="min-w-0 flex-1 w-full text-left">
                   <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                    <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-rose-500/15 text-rose-400 border border-rose-500/20">
-                      Vídeo Detectado
-                    </span>
+                    {getMediaPlatform(mediaInfo.url) === 'tiktok' ? (
+                      <span className="text-[10px] font-bold uppercase px-2.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 flex items-center gap-1">
+                        <Sparkles className="w-3 h-3 text-cyan-400" />
+                        TikTok Sem Marca d'Água
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-rose-500/15 text-rose-400 border border-rose-500/20">
+                        Vídeo do YouTube
+                      </span>
+                    )}
                     {mediaInfo.uploader && (
                       <span className="text-xs text-slate-400 flex items-center gap-1">
                         <User className="w-3 h-3" /> {mediaInfo.uploader}
@@ -589,7 +601,11 @@ export default function DownloadForm({ userId, onDownloadStarted }: DownloadForm
                   <div className="text-left">
                     <div className="font-semibold text-sm">Áudio MP3</div>
                     <div className="text-[11px] opacity-70">
-                      {mediaInfo?.is_playlist ? 'Faixas em MP3' : 'Apenas o áudio'}
+                      {mediaInfo?.is_playlist
+                        ? 'Faixas em MP3'
+                        : getMediaPlatform(mediaInfo?.url || url) === 'tiktok'
+                        ? 'Música / Áudio original'
+                        : 'Apenas o áudio'}
                     </div>
                   </div>
                 </button>
@@ -606,7 +622,11 @@ export default function DownloadForm({ userId, onDownloadStarted }: DownloadForm
                   <Film className="w-5 h-5 flex-shrink-0" />
                   <div className="text-left">
                     <div className="font-semibold text-sm">Vídeo MP4</div>
-                    <div className="text-[11px] opacity-70">Vídeo com som</div>
+                    <div className="text-[11px] opacity-70">
+                      {getMediaPlatform(mediaInfo?.url || url) === 'tiktok'
+                        ? 'Sem marca d\'água'
+                        : 'Vídeo com som'}
+                    </div>
                   </div>
                 </button>
               </div>

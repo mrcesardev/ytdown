@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { cleanYouTubeUrl, isYouTubePlaylist } from '@/lib/youtube';
+import { cleanMediaUrl, isYouTubePlaylist } from '@/lib/youtube';
 
 // 1. Resolução de credenciais do Supabase
 const supabaseUrl =
@@ -33,14 +33,14 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
 
     if (!body.url) {
-      return NextResponse.json({ detail: 'URL do YouTube é obrigatória.' }, { status: 400 });
+      return NextResponse.json({ detail: 'URL da mídia é obrigatória.' }, { status: 400 });
     }
 
     const rawUrl = body.url.trim();
-    const cleanUrl = cleanYouTubeUrl(rawUrl);
+    const cleanUrl = cleanMediaUrl(rawUrl);
     const isPlaylist = Boolean(body.is_playlist && isYouTubePlaylist(rawUrl));
     const selectedUrlsClean = Array.isArray(body.selected_urls)
-      ? body.selected_urls.map((u: string) => (typeof u === 'string' ? cleanYouTubeUrl(u) : u))
+      ? body.selected_urls.map((u: string) => (typeof u === 'string' ? cleanMediaUrl(u) : u))
       : null;
 
     if (!supabaseUrl || !supabaseKey) {

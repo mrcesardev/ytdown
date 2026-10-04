@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 from urllib.parse import quote
 
+import requests
 import yt_dlp
 from app.celery_app import celery_app
 from app.config import settings
@@ -22,6 +23,157 @@ def sanitize_filename(name: str) -> str:
     name = re.sub(r'[\\/*?:"<>|]', "", name)
     name = name.strip().replace(" ", "_")
     return name[:100]  # Limita tamanho para evitar erros de path
+
+
+def is_tiktok_url(url: str) -> bool:
+    """Detecta se a URL pertence ao TikTok."""
+    if not url:
+        return False
+    u = url.lower().strip()
+    return "tiktok.com" in u or "douyin.com" in u
+
+
+def extract_tiktok_info(url: str) -> Dict[str, Any]:
+    """Extrai metadados do vídeo do TikTok via TikWM API (sem marca d'água)."""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+        "Accept": "application/json",
+    }
+    resp = requests.post("https://www.tikwm.com/api/", data={"url": url.strip()}, headers=headers, timeout=12)
+    if resp.status_code != 200:
+        raise ValueError(f"TikWM retornou HTTP {resp.status_code}")
+    res_json = resp.json()
+    if res_json.get("code") != 0 or not res_json.get("data"):
+        raise ValueError(res_json.get("msg") or "Não foi possível extrair dados deste vídeo do TikTok.")
+
+    d = res_json["data"]
+    title = d.get("title") or f"TikTok_{d.get('id', 'video')}"
+    duration = d.get("duration")
+    uploader = d.get("author", {}).get("nickname") or d.get("author", {}).get("unique_id") or "TikTok Creator"
+    cover = d.get("cover") or d.get("origin_cover")
+
+    def format_duration(seconds: Optional[int]) -> Optional[str]:
+        if not seconds:
+            return None
+        seconds = int(seconds)
+        mins, secs = divmod(seconds, 60)
+        hrs, mins = divmod(mins, 60)
+        if hrs > 0:
+            return f"{hrs:d}:{mins:02d}:{secs:02d}"
+        return f"{mins:02d}:{secs:02d}"
+
+    return {
+        "url": url,
+        "title": title,
+        "thumbnail": cover,
+        "duration": duration,
+        "duration_formatted": format_duration(duration),
+        "uploader": uploader,
+        "is_playlist": False,
+        "entries": None,
+        "total_entries": 1,
+    }
+
+
+def download_tiktok_media(
+    download_id: str,
+    url: str,
+    format_type: str,
+    quality: str,
+    download_dir: Path,
+    task_instance: Optional[Any] = None
+) -> Dict[str, Any]:
+    """Baixa vídeo sem marca d'água ou extrai áudio MP3 de um TikTok."""
+    update_download_record(download_id, {
+        "status": "processing",
+        "progress": 15
+    })
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+        "Accept": "application/json",
+    }
+    resp = requests.post("https://www.tikwm.com/api/", data={"url": url.strip()}, headers=headers, timeout=15)
+    if resp.status_code != 200:
+        raise ValueError(f"TikWM retornou HTTP {resp.status_code}")
+    res_json = resp.json()
+    if res_json.get("code") != 0 or not res_json.get("data"):
+        raise ValueError(res_json.get("msg") or "Falha ao obter link de download do TikTok.")
+
+    d = res_json["data"]
+    raw_title = d.get("title") or f"TikTok_{d.get('id', download_id)}"
+    clean_title = sanitize_filename(raw_title) or f"tiktok_{download_id[:8]}"
+    thumbnail = d.get("cover")
+
+    update_download_record(download_id, {
+        "title": raw_title,
+        "thumbnail": thumbnail,
+        "progress": 30
+    })
+
+    if format_type == "mp3":
+        target_ext = "mp3"
+        final_file = download_dir / f"{download_id}_{clean_title}.mp3"
+        stream_url = d.get("music") or d.get("play")
+    else:
+        target_ext = "mp4"
+        final_file = download_dir / f"{download_id}_{clean_title}.mp4"
+        stream_url = d.get("hdplay") or d.get("play")
+
+    if not stream_url:
+        raise ValueError("URL do fluxo de mídia não encontrada para este vídeo do TikTok.")
+
+    if stream_url.startswith("/"):
+        stream_url = f"https://www.tikwm.com{stream_url}"
+
+    update_download_record(download_id, {"progress": 40})
+
+    with requests.get(stream_url, stream=True, timeout=60, headers={"User-Agent": "Mozilla/5.0"}) as stream_resp:
+        if stream_resp.status_code != 200:
+            raise ValueError(f"Falha ao baixar fluxo de mídia do TikTok: HTTP {stream_resp.status_code}")
+
+        total_len = stream_resp.headers.get("content-length")
+        total_bytes = int(total_len) if total_len and total_len.isdigit() else 0
+        downloaded = 0
+        last_progress_time = time.time()
+
+        with open(final_file, "wb") as f:
+            for chunk in stream_resp.iter_content(chunk_size=65536):
+                if chunk:
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    if total_bytes > 0:
+                        now = time.time()
+                        if now - last_progress_time > 1.5:
+                            last_progress_time = now
+                            pct = min(int(40 + (downloaded / total_bytes) * 50), 90)
+                            update_download_record(download_id, {"progress": pct})
+                            if task_instance:
+                                task_instance.update_state(state="PROGRESS", meta={"progress": pct})
+
+    filename = final_file.name
+    file_size = final_file.stat().st_size
+    download_url = f"{settings.BASE_URL.rstrip('/')}/api/files/{quote(filename)}"
+
+    update_download_record(download_id, {
+        "status": "completed",
+        "progress": 100,
+        "filename": filename,
+        "file_path": str(final_file),
+        "file_size": file_size,
+        "download_url": download_url,
+        "completed_at": datetime.now(timezone.utc).isoformat()
+    })
+
+    logger.info(f"Download TikTok {download_id} concluído com sucesso: {filename} ({file_size} bytes)")
+    return {
+        "id": download_id,
+        "status": "completed",
+        "title": raw_title,
+        "filename": filename,
+        "download_url": download_url,
+        "file_size": file_size
+    }
 
 
 def clean_youtube_url(url: str) -> str:
@@ -47,6 +199,9 @@ def clean_youtube_url(url: str) -> str:
 
 def extract_media_info(url: str) -> Dict[str, Any]:
     """Extrai informações da mídia (vídeo ou playlist) rapidamente sem baixar."""
+    if is_tiktok_url(url):
+        return extract_tiktok_info(url)
+
     url = clean_youtube_url(url)
     ydl_opts: Dict[str, Any] = {
         "extract_flat": "in_playlist",
@@ -152,6 +307,18 @@ def execute_download(
     Função principal de download e conversão.
     Pode ser executada pelo Celery (em produção com Redis) ou diretamente pelo FastAPI (em desenvolvimento local).
     """
+    if is_tiktok_url(url):
+        download_dir = Path(settings.DOWNLOAD_DIR)
+        download_dir.mkdir(parents=True, exist_ok=True)
+        return download_tiktok_media(
+            download_id=download_id,
+            url=url,
+            format_type=format_type,
+            quality=quality,
+            download_dir=download_dir,
+            task_instance=task_instance,
+        )
+
     url = clean_youtube_url(url)
     if is_playlist and ("list=" not in url or "list=RD" in url or "list=UL" in url):
         is_playlist = False

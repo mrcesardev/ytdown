@@ -1,11 +1,32 @@
 /**
- * Utilitários para normalização e detecção de URLs do YouTube.
+ * Utilitários para normalização e detecção de URLs do YouTube e TikTok.
  */
 
 export function isYouTubeUrl(inputUrl: string): boolean {
   if (!inputUrl) return false;
-  const trimmed = inputUrl.trim();
+  const trimmed = inputUrl.trim().toLowerCase();
   return trimmed.includes('youtube.com/') || trimmed.includes('youtu.be/');
+}
+
+export function isTikTokUrl(inputUrl: string): boolean {
+  if (!inputUrl) return false;
+  const trimmed = inputUrl.trim().toLowerCase();
+  return (
+    trimmed.includes('tiktok.com/') ||
+    trimmed.includes('vm.tiktok.com/') ||
+    trimmed.includes('vt.tiktok.com/') ||
+    trimmed.includes('douyin.com/')
+  );
+}
+
+export function isSupportedMediaUrl(inputUrl: string): boolean {
+  return isYouTubeUrl(inputUrl) || isTikTokUrl(inputUrl);
+}
+
+export function getMediaPlatform(inputUrl: string): 'youtube' | 'tiktok' | 'unknown' {
+  if (isYouTubeUrl(inputUrl)) return 'youtube';
+  if (isTikTokUrl(inputUrl)) return 'tiktok';
+  return 'unknown';
 }
 
 /**
@@ -69,4 +90,13 @@ export function cleanYouTubeUrl(inputUrl: string): string {
   } catch {
     return trimmed;
   }
+}
+
+export function cleanMediaUrl(inputUrl: string): string {
+  if (!inputUrl) return '';
+  const trimmed = inputUrl.trim();
+  if (isYouTubeUrl(trimmed)) {
+    return cleanYouTubeUrl(trimmed);
+  }
+  return trimmed;
 }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { cleanYouTubeUrl, isYouTubeUrl } from '@/lib/youtube';
+import { cleanMediaUrl, isSupportedMediaUrl } from '@/lib/youtube';
 
 export const maxDuration = 45;
 
@@ -29,11 +29,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!isYouTubeUrl(rawUrl)) {
-      return NextResponse.json({ detail: 'URL inválida do YouTube.' }, { status: 400 });
+    if (!isSupportedMediaUrl(rawUrl)) {
+      return NextResponse.json({ detail: 'URL inválida. Suportamos links do YouTube e TikTok.' }, { status: 400 });
     }
 
-    const url = cleanYouTubeUrl(rawUrl);
+    const url = cleanMediaUrl(rawUrl);
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 35000); // 35s timeout
