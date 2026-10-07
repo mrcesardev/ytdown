@@ -246,6 +246,11 @@ export default function DownloadList({ userId, activeDownloads }: DownloadListPr
                       Instagram
                     </span>
                   )}
+                  {getMediaPlatform(item.original_url) === 'twitter' && (
+                    <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-sky-500/15 text-sky-300 border border-sky-500/25">
+                      X (Twitter)
+                    </span>
+                  )}
                   {getMediaPlatform(item.original_url) === 'youtube' && (
                     <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-rose-500/15 text-rose-300 border border-rose-500/25">
                       YouTube

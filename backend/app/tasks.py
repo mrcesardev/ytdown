@@ -383,6 +383,391 @@ def download_instagram_media(
         raise
 
 
+def is_twitter_url(url: str) -> bool:
+    """Detecta se a URL pertence ao X (Twitter)."""
+    if not url:
+        return False
+    u = url.lower().strip()
+    return "twitter.com" in u or "x.com" in u or "t.co" in u
+
+
+def clean_twitter_url(url: str) -> str:
+    """Remove parâmetros de rastreamento do X / Twitter (s, t, ref_src, etc.)."""
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(url.strip())
+        return f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+    except Exception:
+        return url.split("?")[0].strip()
+
+
+def extract_twitter_info(url: str) -> Dict[str, Any]:
+    """Extrai metadados do post/vídeo do X (Twitter) via API FxTwitter ou yt-dlp."""
+    clean_url = clean_twitter_url(url)
+
+    # 1. Estratégia primária: API FxTwitter (rápida, estável e livre de rate-limits de guest token)
+    match = re.search(r'(?:twitter\.com|x\.com)/(?:i|[a-zA-Z0-9_]+)/status/(\d+)', clean_url)
+    if match:
+        tweet_id = match.group(1)
+        try:
+            resp = requests.get(
+                f"https://api.fxtwitter.com/i/status/{tweet_id}",
+                headers={"User-Agent": "YtDown/1.0"},
+                timeout=10
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                tweet = data.get("tweet") or {}
+                media = tweet.get("media") or {}
+                videos = media.get("videos") or []
+
+                if not videos:
+                    raise ValueError(
+                        "Nenhum vídeo ou GIF foi encontrado nesta publicação do X (Twitter). "
+                        "Certifique-se de que a publicação contém um vídeo."
+                    )
+
+                v = videos[0]
+                raw_title = tweet.get("text") or f"X_{tweet_id}"
+                if len(raw_title) > 90:
+                    raw_title = raw_title[:90] + "..."
+                raw_title = raw_title.replace("\n", " ").strip()
+                duration = v.get("duration")
+                uploader = tweet.get("author", {}).get("name") or tweet.get("author", {}).get("screen_name") or "X (Twitter)"
+                thumbnail = v.get("thumbnail_url")
+
+                def format_duration(seconds: Optional[int | float]) -> Optional[str]:
+                    if not seconds:
+                        return None
+                    seconds = int(seconds)
+                    mins, secs = divmod(seconds, 60)
+                    hrs, mins = divmod(mins, 60)
+                    if hrs > 0:
+                        return f"{hrs:d}:{mins:02d}:{secs:02d}"
+                    return f"{mins:02d}:{secs:02d}"
+
+                return {
+                    "url": clean_url,
+                    "title": raw_title,
+                    "thumbnail": thumbnail,
+                    "duration": duration,
+                    "duration_formatted": format_duration(duration),
+                    "uploader": uploader,
+                    "is_playlist": False,
+                    "entries": None,
+                    "total_entries": 1,
+                }
+            elif resp.status_code == 404:
+                raise ValueError("Publicação não encontrada no X (Twitter). Verifique se o link está correto ou se o post foi apagado.")
+            elif resp.status_code == 401:
+                raise ValueError("Esta publicação do X (Twitter) pertence a uma conta privada ou requer login.")
+        except ValueError:
+            raise
+        except Exception as e:
+            logger.warning(f"FxTwitter falhou, tentando fallback com yt-dlp para {clean_url}: {e}")
+
+    # 2. Fallback: yt-dlp
+    ydl_opts: Dict[str, Any] = {
+        "skip_download": True,
+        "quiet": True,
+        "no_warnings": True,
+        "socket_timeout": 15,
+    }
+    cookies_path = settings.resolved_cookies_file
+    if cookies_path:
+        ydl_opts["cookiefile"] = cookies_path
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(clean_url, download=False)
+            if not info:
+                raise ValueError("Não foi possível extrair dados desta publicação do X (Twitter).")
+
+            raw_title = info.get("title") or info.get("description") or f"X_{info.get('id', 'media')}"
+            if len(raw_title) > 90:
+                raw_title = raw_title[:90] + "..."
+            duration = info.get("duration")
+            uploader = info.get("uploader") or info.get("channel") or info.get("uploader_id") or "X (Twitter)"
+            thumbnail = info.get("thumbnail")
+            if not thumbnail and info.get("thumbnails"):
+                thumbnail = info.get("thumbnails")[-1].get("url")
+
+            def format_duration(seconds: Optional[int]) -> Optional[str]:
+                if not seconds:
+                    return None
+                seconds = int(seconds)
+                mins, secs = divmod(seconds, 60)
+                hrs, mins = divmod(mins, 60)
+                if hrs > 0:
+                    return f"{hrs:d}:{mins:02d}:{secs:02d}"
+                return f"{mins:02d}:{secs:02d}"
+
+            return {
+                "url": clean_url,
+                "title": raw_title,
+                "thumbnail": thumbnail,
+                "duration": duration,
+                "duration_formatted": format_duration(duration),
+                "uploader": uploader,
+                "is_playlist": False,
+                "entries": None,
+                "total_entries": 1,
+            }
+    except Exception as e:
+        err_msg = str(e)
+        if "no video could be found" in err_msg.lower():
+            raise ValueError(
+                "Nenhum vídeo foi encontrado nesta publicação do X (Twitter). "
+                "Certifique-se de que a publicação contém um vídeo ou GIF."
+            )
+        if "login" in err_msg.lower() or "authorization" in err_msg.lower():
+            raise ValueError(
+                "Este conteúdo do X (Twitter) requer autenticação ou pertence a uma conta privada."
+            )
+        raise ValueError(f"Erro ao processar link do X (Twitter): {err_msg}")
+
+
+def download_twitter_media(
+    download_id: str,
+    url: str,
+    format_type: str,
+    quality: str,
+    download_dir: Path,
+    task_instance: Optional[Any] = None
+) -> Dict[str, Any]:
+    """Baixa vídeo do X (Twitter) em MP4 ou extrai em áudio MP3."""
+    clean_url = clean_twitter_url(url)
+    update_download_record(download_id, {
+        "status": "processing",
+        "progress": 15
+    })
+
+    # 1. Tenta baixar diretamente usando os streams do FxTwitter
+    match = re.search(r'(?:twitter\.com|x\.com)/(?:i|[a-zA-Z0-9_]+)/status/(\d+)', clean_url)
+    if match:
+        tweet_id = match.group(1)
+        temp_mp4 = download_dir / f"temp_{download_id}.mp4"
+        try:
+            resp = requests.get(
+                f"https://api.fxtwitter.com/i/status/{tweet_id}",
+                headers={"User-Agent": "YtDown/1.0"},
+                timeout=12
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                tweet = data.get("tweet") or {}
+                videos = tweet.get("media", {}).get("videos", [])
+                if not videos:
+                    raise ValueError("Nenhum vídeo ou GIF encontrado nesta publicação do X (Twitter).")
+
+                v = videos[0]
+                formats = v.get("formats", [])
+                mp4_formats = [f for f in formats if f.get("container") == "mp4" or "mp4" in f.get("url", "")]
+                if mp4_formats:
+                    mp4_formats.sort(key=lambda x: x.get("bitrate", 0), reverse=True)
+                    video_stream_url = mp4_formats[0].get("url")
+                else:
+                    video_stream_url = v.get("url")
+
+                if video_stream_url:
+                    raw_title = tweet.get("text") or f"X_{tweet_id}"
+                    if len(raw_title) > 90:
+                        raw_title = raw_title[:90] + "..."
+                    raw_title = raw_title.replace("\n", " ").strip()
+                    clean_title = sanitize_filename(raw_title) or f"x_{download_id[:8]}"
+                    thumbnail = v.get("thumbnail_url")
+
+                    update_download_record(download_id, {
+                        "title": raw_title,
+                        "thumbnail": thumbnail,
+                        "progress": 25
+                    })
+
+                    with requests.get(video_stream_url, stream=True, timeout=60, headers={"User-Agent": "Mozilla/5.0"}) as stream_resp:
+                        stream_resp.raise_for_status()
+                        total_len = stream_resp.headers.get("content-length")
+                        total_bytes = int(total_len) if total_len and total_len.isdigit() else 0
+                        downloaded = 0
+                        last_progress_time = time.time()
+
+                        with open(temp_mp4, "wb") as f:
+                            for chunk in stream_resp.iter_content(chunk_size=65536):
+                                if chunk:
+                                    f.write(chunk)
+                                    downloaded += len(chunk)
+                                    if total_bytes > 0:
+                                        now = time.time()
+                                        if now - last_progress_time > 1.5:
+                                            last_progress_time = now
+                                            pct = min(int(25 + (downloaded / total_bytes) * 60), 85)
+                                            update_download_record(download_id, {"progress": pct})
+                                            if task_instance:
+                                                task_instance.update_state(state="PROGRESS", meta={"progress": pct})
+
+                    if format_type == "mp3":
+                        final_file = download_dir / f"{download_id}_{clean_title}.mp3"
+                        audio_bitrate = "320k" if quality == "high" else "128k"
+                        update_download_record(download_id, {"progress": 90})
+                        import subprocess
+                        subprocess.run(
+                            ["ffmpeg", "-y", "-i", str(temp_mp4), "-vn", "-c:a", "libmp3lame", "-b:a", audio_bitrate, str(final_file)],
+                            check=True,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL
+                        )
+                        if temp_mp4.exists():
+                            temp_mp4.unlink()
+                    else:
+                        final_file = download_dir / f"{download_id}_{clean_title}.mp4"
+                        if temp_mp4.exists():
+                            if final_file.exists():
+                                final_file.unlink()
+                            temp_mp4.rename(final_file)
+
+                    filename = final_file.name
+                    file_size = final_file.stat().st_size
+                    download_url = f"{settings.BASE_URL.rstrip('/')}/api/files/{quote(filename)}"
+
+                    update_download_record(download_id, {
+                        "status": "completed",
+                        "progress": 100,
+                        "filename": filename,
+                        "file_path": str(final_file),
+                        "file_size": file_size,
+                        "download_url": download_url,
+                        "completed_at": datetime.now(timezone.utc).isoformat()
+                    })
+
+                    logger.info(f"Download X (Twitter) {download_id} via FxTwitter concluído: {filename} ({file_size} bytes)")
+                    return {
+                        "id": download_id,
+                        "status": "completed",
+                        "title": raw_title,
+                        "filename": filename,
+                        "download_url": download_url,
+                        "file_size": file_size
+                    }
+        except ValueError:
+            if temp_mp4.exists():
+                temp_mp4.unlink()
+            raise
+        except Exception as e:
+            logger.warning(f"Download direto via FxTwitter falhou ({e}), tentando fallback via yt-dlp...")
+            if temp_mp4.exists():
+                temp_mp4.unlink()
+
+    # 2. Fallback: yt-dlp
+    cookies_path = settings.resolved_cookies_file
+    output_template = str(download_dir / f"{download_id}_%(title).100s.%(ext)s")
+
+    last_progress_time = 0.0
+    last_progress_val = 0
+
+    def progress_hook(d: Dict[str, Any]):
+        nonlocal last_progress_time, last_progress_val
+        if d.get("status") == "downloading":
+            now = time.time()
+            total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
+            downloaded = d.get("downloaded_bytes") or 0
+            if total > 0:
+                percent = int((downloaded / total) * 100)
+                if (percent - last_progress_val >= 10 or (now - last_progress_time > 2.0)) and percent > last_progress_val:
+                    last_progress_val = percent
+                    last_progress_time = now
+                    update_download_record(download_id, {"progress": min(max(percent, 20), 90)})
+                    if task_instance:
+                        task_instance.update_state(state="PROGRESS", meta={"progress": percent})
+
+    ydl_opts: Dict[str, Any] = {
+        "outtmpl": output_template,
+        "progress_hooks": [progress_hook],
+        "quiet": True,
+        "no_warnings": True,
+        "socket_timeout": 30,
+    }
+    if cookies_path:
+        ydl_opts["cookiefile"] = cookies_path
+
+    if format_type == "mp3":
+        audio_bitrate = "320" if quality == "high" else "128"
+        ydl_opts.update({
+            "format": "bestaudio/best",
+            "postprocessors": [
+                {
+                    "key": "FFmpegExtractAudio",
+                    "preferredcodec": "mp3",
+                    "preferredquality": audio_bitrate,
+                },
+                {"key": "FFmpegMetadata"},
+            ],
+        })
+    else:
+        ydl_opts.update({
+            "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+            "merge_output_format": "mp4",
+        })
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(clean_url, download=True)
+            if not info:
+                raise ValueError("Falha ao baixar mídia do X (Twitter).")
+
+            raw_title = info.get("title") or info.get("description") or f"X_{download_id[:8]}"
+            if len(raw_title) > 90:
+                raw_title = raw_title[:90] + "..."
+            thumbnail = info.get("thumbnail")
+            target_ext = "mp3" if format_type == "mp3" else "mp4"
+
+            matching_files = list(download_dir.glob(f"{download_id}_*.{target_ext}"))
+            if not matching_files:
+                matching_files = list(download_dir.glob(f"{download_id}_*.*"))
+
+            if not matching_files:
+                raise FileNotFoundError("Arquivo baixado do X (Twitter) não foi localizado.")
+
+            final_file = matching_files[0]
+            filename = final_file.name
+            file_size = final_file.stat().st_size
+            download_url = f"{settings.BASE_URL.rstrip('/')}/api/files/{quote(filename)}"
+
+            update_download_record(download_id, {
+                "title": raw_title,
+                "thumbnail": thumbnail,
+                "status": "completed",
+                "progress": 100,
+                "filename": filename,
+                "file_path": str(final_file),
+                "file_size": file_size,
+                "download_url": download_url,
+                "completed_at": datetime.now(timezone.utc).isoformat()
+            })
+
+            logger.info(f"Download X (Twitter) {download_id} concluído com sucesso: {filename} ({file_size} bytes)")
+            return {
+                "id": download_id,
+                "status": "completed",
+                "title": raw_title,
+                "filename": filename,
+                "download_url": download_url,
+                "file_size": file_size
+            }
+    except Exception as e:
+        err_msg = str(e)
+        if "no video could be found" in err_msg.lower():
+            friendly_err = "Nenhum vídeo foi encontrado nesta publicação do X (Twitter)."
+            update_download_record(download_id, {
+                "status": "failed",
+                "error_message": friendly_err
+            })
+            raise ValueError(friendly_err)
+        update_download_record(download_id, {
+            "status": "failed",
+            "error_message": err_msg
+        })
+        raise
+
+
 def clean_youtube_url(url: str) -> str:
     """Remove parâmetros de mix/rádio automático (RD..., UL...) preservando o vídeo principal."""
     try:
@@ -410,6 +795,8 @@ def extract_media_info(url: str) -> Dict[str, Any]:
         return extract_tiktok_info(url)
     if is_instagram_url(url):
         return extract_instagram_info(url)
+    if is_twitter_url(url):
+        return extract_twitter_info(url)
 
     url = clean_youtube_url(url)
     ydl_opts: Dict[str, Any] = {
@@ -535,6 +922,18 @@ def execute_download(
         download_dir = Path(settings.DOWNLOAD_DIR)
         download_dir.mkdir(parents=True, exist_ok=True)
         return download_instagram_media(
+            download_id=download_id,
+            url=url,
+            format_type=format_type,
+            quality=quality,
+            download_dir=download_dir,
+            task_instance=task_instance,
+        )
+
+    if is_twitter_url(url):
+        download_dir = Path(settings.DOWNLOAD_DIR)
+        download_dir.mkdir(parents=True, exist_ok=True)
+        return download_twitter_media(
             download_id=download_id,
             url=url,
             format_type=format_type,
@@ -749,8 +1148,14 @@ def cleanup_old_files() -> int:
     cutoff_seconds = settings.MAX_FILE_AGE_HOURS * 3600
     removed_count = 0
 
+    # Arquivos protegidos que JAMAIS devem ser excluídos
+    PROTECTED_FILES = {"cookies.txt", ".gitkeep"}
+
     for file_path in download_dir.iterdir():
         if file_path.is_file():
+            # Não remove cookies de autenticação nem arquivos de controle do git
+            if file_path.name in PROTECTED_FILES or file_path.suffix.lower() == ".txt":
+                continue
             try:
                 mtime = file_path.stat().st_mtime
                 if now - mtime > cutoff_seconds:

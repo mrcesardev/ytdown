@@ -1,12 +1,14 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { supabase, MediaDownload } from '@/lib/supabase';
 import Navbar from '@/components/Navbar';
 import DownloadForm from '@/components/DownloadForm';
 import DownloadList from '@/components/DownloadList';
 import DonationModal from '@/components/DonationModal';
 import AdBanner from '@/components/AdBanner';
+import SeoContent from '@/components/SeoContent';
 import { Sparkles, Shield, Zap, Heart } from 'lucide-react';
 
 export default function HomePage() {
@@ -52,8 +54,8 @@ export default function HomePage() {
         onOpenDonation={() => setIsDonationOpen(true)}
       />
 
-      <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-8 sm:py-12 space-y-10">
-        {/* Formulário Principal de Download */}
+      <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-8 sm:py-12 space-y-12">
+        {/* Formulário Principal de Download com H1 Semântico */}
         <DownloadForm
           userId={user?.id || null}
           onDownloadStarted={handleDownloadStarted}
@@ -68,7 +70,7 @@ export default function HomePage() {
           activeDownloads={activeDownloads}
         />
 
-        {/* Seção Informativa de Recursos */}
+        {/* Seção Informativa de Recursos Rápidos */}
         <div className="max-w-3xl mx-auto pt-6 border-t border-slate-900 grid grid-cols-1 sm:grid-cols-3 gap-6 text-center">
           <div className="p-4 rounded-2xl bg-slate-900/40 border border-slate-800/60">
             <Zap className="w-5 h-5 text-rose-400 mx-auto mb-2" />
@@ -94,12 +96,37 @@ export default function HomePage() {
             </p>
           </div>
         </div>
+
+        {/* Seção Completa de SEO: Como Baixar, Formatos, Diferenciais e FAQ Accordion */}
+        <SeoContent />
       </main>
 
-      <footer className="border-t border-slate-900 py-6 px-4 text-center text-xs text-slate-500 space-y-2">
+      <footer className="border-t border-slate-900 py-8 px-4 text-center text-xs text-slate-500 space-y-4">
+        {/* Links de Rodapé para Rastreamento e SEO */}
+        <nav aria-label="Links úteis" className="flex flex-wrap items-center justify-center gap-4 text-slate-400 text-xs">
+          <Link href="#faq" className="hover:text-rose-400 transition-colors">
+            Perguntas Frequentes
+          </Link>
+          <span>&bull;</span>
+          <Link href="/login" className="hover:text-rose-400 transition-colors">
+            Cadastrar Grátis (320k & Playlists)
+          </Link>
+          <span>&bull;</span>
+          <button
+            type="button"
+            onClick={() => setIsDonationOpen(true)}
+            className="hover:text-rose-400 transition-colors"
+          >
+            Apoiar Servidores com PIX
+          </button>
+        </nav>
+
         <div className="flex items-center justify-center gap-2">
-          <span>YtDown &copy; {new Date().getFullYear()} &bull; Conversor de Mídia Pessoal &bull; VPS Absam.io</span>
+          <span>
+            YtDown &copy; {new Date().getFullYear()} &bull; Conversor e Baixador de Mídia Online de Alta Performance
+          </span>
         </div>
+
         <div>
           <button
             type="button"

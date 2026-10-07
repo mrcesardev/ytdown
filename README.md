@@ -1,12 +1,13 @@
 # YtDown 🎬🎧📱
 
-Aplicação moderna de extração e conversão de mídias do **YouTube**, **TikTok** e **Instagram** (estilo *stream-ripper* como o Yout.com), arquitetada para alta performance, baixo custo e sem anúncios.
+Aplicação moderna de extração e conversão de mídias do **YouTube**, **TikTok**, **Instagram** e **X (Twitter)** (estilo *stream-ripper* como o Yout.com), arquitetada para alta performance, baixo custo e sem anúncios.
 
 ### 🌟 Modelo de Acesso e Funcionalidades
 * **Página Inicial Pública (Sem Login)**: Qualquer visitante pode colar o link e baixar diretamente:
   * 🎬 **YouTube**: Vídeos em MP4 (720p) ou Áudio em MP3 (128 kbps).
   * ⚡ **TikTok**: Vídeos em MP4 **sem marca d'água** ou Áudio MP3 da trilha sonora original.
   * 📸 **Instagram**: Reels, Posts e Vídeos em MP4 ou extração de Áudio MP3.
+  * 🐦 **X (Twitter)**: Vídeos, Clipes e GIFs em MP4 ou extração de Áudio MP3.
 * **Recursos Exclusivos (Com Cadastro Gratuito)**:
   * 📦 **Download de Playlists Completas**: Baixa todos os vídeos ou músicas de uma lista do YouTube compactados em um único arquivo `.zip`.
   * 🎵 **Áudio em Alta Fidelidade (320 kbps)**: Conversão acústica com máxima fidelidade.
@@ -138,7 +139,26 @@ YtDown/
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`: Chave pública `anon` do Supabase.
    - `NEXT_PUBLIC_API_URL`: URL da API na VPS (ex: `https://api.seudominio.com` ou `http://IP_DA_VPS:8000`).
    - `NEXT_PUBLIC_API_SECRET_KEY`: A mesma chave secreta definida no backend.
+   - `NEXT_PUBLIC_SITE_URL`: Seu domínio público em produção (ex: `https://ytdown.com.br`).
+   - `NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION` *(Opcional)*: Token de verificação do Google Search Console.
+   - `NEXT_PUBLIC_BING_SITE_VERIFICATION` *(Opcional)*: Token de verificação do Bing Webmaster Tools.
 4. Clique em **Deploy**!
+
+---
+
+### 4. Configuração de SEO & Google Search Console
+
+O **YtDown** já vem pronto para o topo das buscas com:
+* 🗺️ **Sitemap Dinâmico**: `/sitemap.xml` gerado automaticamente com prioridades e frequências de atualização.
+* 🤖 **Robots.txt Otimizado**: `/robots.txt` permitindo indexação de páginas públicas e protegendo rotas internas/APIs.
+* 📱 **PWA & Web Manifest**: `/manifest.webmanifest` para alta pontuação no Google Lighthouse e indexação mobile.
+* 📊 **Dados Estruturados Schema.org (JSON-LD)**: Marcadores para `WebApplication`, `Organization`, `HowTo` e `FAQPage` (para ativar snippets ricos com perguntas frequentes na página de resultados do Google).
+* 🖼️ **OpenGraph & Twitter Cards HD**: Preview visual automático para compartilhamento no WhatsApp, Telegram, Twitter e Facebook.
+* 🔍 **Envio para os buscadores**:
+  1. Acesse o [Google Search Console](https://search.google.com/search-console).
+  2. Adicione sua propriedade (URL do seu site).
+  3. Insira o código da tag HTML na variável `NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION`.
+  4. No menu lateral do Search Console, clique em **Sitemaps** e envie: `sitemap.xml`.
 
 ---
 

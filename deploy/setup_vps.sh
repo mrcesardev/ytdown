@@ -52,7 +52,8 @@ echo "🧹 Configurando Cron Job de limpeza automática de arquivos..."
 DOWNLOADS_PATH="/opt/ytdown/backend/downloads"
 mkdir -p "$DOWNLOADS_PATH"
 
-CRON_JOB="0 * * * * find $DOWNLOADS_PATH -type f -mmin +120 -delete"
+# Ignora explicitamente cookies.txt, arquivos de texto e .gitkeep
+CRON_JOB="0 * * * * find $DOWNLOADS_PATH -type f ! -name 'cookies.txt' ! -name '*.txt' ! -name '.gitkeep' -mmin +120 -delete"
 (crontab -l 2>/dev/null | grep -Fv "$DOWNLOADS_PATH" ; echo "$CRON_JOB") | crontab -
 
 echo "=============================================================================="

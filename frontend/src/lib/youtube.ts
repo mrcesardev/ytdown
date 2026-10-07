@@ -32,14 +32,32 @@ export function isInstagramUrl(inputUrl: string): boolean {
   );
 }
 
-export function isSupportedMediaUrl(inputUrl: string): boolean {
-  return isYouTubeUrl(inputUrl) || isTikTokUrl(inputUrl) || isInstagramUrl(inputUrl);
+export function isTwitterUrl(inputUrl: string): boolean {
+  if (!inputUrl) return false;
+  const trimmed = inputUrl.trim().toLowerCase();
+  return (
+    trimmed.includes('twitter.com/') ||
+    trimmed.includes('x.com/') ||
+    trimmed.includes('t.co/')
+  );
 }
 
-export function getMediaPlatform(inputUrl: string): 'youtube' | 'tiktok' | 'instagram' | 'unknown' {
+export function isSupportedMediaUrl(inputUrl: string): boolean {
+  return (
+    isYouTubeUrl(inputUrl) ||
+    isTikTokUrl(inputUrl) ||
+    isInstagramUrl(inputUrl) ||
+    isTwitterUrl(inputUrl)
+  );
+}
+
+export function getMediaPlatform(
+  inputUrl: string
+): 'youtube' | 'tiktok' | 'instagram' | 'twitter' | 'unknown' {
   if (isYouTubeUrl(inputUrl)) return 'youtube';
   if (isTikTokUrl(inputUrl)) return 'tiktok';
   if (isInstagramUrl(inputUrl)) return 'instagram';
+  if (isTwitterUrl(inputUrl)) return 'twitter';
   return 'unknown';
 }
 
@@ -118,6 +136,18 @@ export function cleanInstagramUrl(inputUrl: string): string {
   }
 }
 
+export function cleanTwitterUrl(inputUrl: string): string {
+  if (!inputUrl) return '';
+  const trimmed = inputUrl.trim();
+  try {
+    const urlObj = new URL(trimmed);
+    // Remove query params de tracking (?s=..., &t=...) mantendo o caminho limpo
+    return `${urlObj.origin}${urlObj.pathname}`;
+  } catch {
+    return trimmed.split('?')[0];
+  }
+}
+
 export function cleanMediaUrl(inputUrl: string): string {
   if (!inputUrl) return '';
   const trimmed = inputUrl.trim();
@@ -126,6 +156,9 @@ export function cleanMediaUrl(inputUrl: string): string {
   }
   if (isInstagramUrl(trimmed)) {
     return cleanInstagramUrl(trimmed);
+  }
+  if (isTwitterUrl(trimmed)) {
+    return cleanTwitterUrl(trimmed);
   }
   return trimmed;
 }

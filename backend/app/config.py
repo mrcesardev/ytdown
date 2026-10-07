@@ -30,8 +30,11 @@ class Settings(BaseSettings):
         if self.COOKIES_FILE and os.path.exists(self.COOKIES_FILE):
             return self.COOKIES_FILE
         local_cookies = Path(__file__).resolve().parent.parent / "cookies.txt"
-        if local_cookies.exists():
+        if local_cookies.exists() and local_cookies.is_file():
             return str(local_cookies)
+        downloads_cookies = Path(self.DOWNLOAD_DIR) / "cookies.txt"
+        if downloads_cookies.exists() and downloads_cookies.is_file():
+            return str(downloads_cookies)
         return None
 
     class Config:
