@@ -1135,6 +1135,14 @@ def cleanup_old_files() -> int:
                     removed_count += 1
             except Exception as e:
                 logger.error(f"Erro ao remover arquivo {file_path.name}: {e}")
+        elif file_path.is_dir() and file_path.name.startswith("pl_"):
+            try:
+                mtime = file_path.stat().st_mtime
+                if now - mtime > cutoff_seconds:
+                    shutil.rmtree(file_path, ignore_errors=True)
+                    removed_count += 1
+            except Exception as e:
+                logger.error(f"Erro ao remover pasta temporária {file_path.name}: {e}")
 
     logger.info(f"Limpeza de disco concluída: {removed_count} arquivos removidos.")
     return removed_count

@@ -47,13 +47,15 @@ ufw allow 443/tcp   # HTTPS
 ufw allow 8000/tcp  # API Backend
 echo "y" | ufw enable || true
 
-# 5. Configurar Cron Job para Limpeza de Arquivos Temporários (> 2 horas)
+# 5. Configurar Cron Job para Limpeza de Downloads (de hora em hora, arquivos > 30 minutos)
 echo "🧹 Configurando Cron Job de limpeza automática de arquivos..."
 DOWNLOADS_PATH="/opt/ytdown/backend/downloads"
 mkdir -p "$DOWNLOADS_PATH"
 
-# Ignora explicitamente cookies.txt, arquivos de texto e .gitkeep
-CRON_JOB="0 * * * * find $DOWNLOADS_PATH -type f ! -name 'cookies.txt' ! -name '*.txt' ! -name '.gitkeep' -mmin +120 -delete"
+# Executa no minuto 0 de cada hora (0 * * * *).
+# Remove arquivos de mídia e temporários com mais de 30 minutos de vida (-mmin +30),
+# garantindo que o usuário tenha tempo para baixar (< 30 min) e protegendo cookies.txt, *.txt e .gitkeep.
+CRON_JOB="0 * * * * find $DOWNLOADS_PATH -type f ! -name 'cookies.txt' ! -name '*.txt' ! -name '.gitkeep' -mmin +30 -delete && find $DOWNLOADS_PATH -mindepth 1 -maxdepth 1 -type d -name 'pl_*' -mmin +30 -exec rm -rf {} +"
 (crontab -l 2>/dev/null | grep -Fv "$DOWNLOADS_PATH" ; echo "$CRON_JOB") | crontab -
 
 echo "=============================================================================="

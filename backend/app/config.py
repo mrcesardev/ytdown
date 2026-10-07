@@ -20,7 +20,7 @@ class Settings(BaseSettings):
 
     # Downloads
     DOWNLOAD_DIR: str = str(Path(__file__).resolve().parent.parent / "downloads")
-    MAX_FILE_AGE_HOURS: int = 2
+    MAX_FILE_AGE_HOURS: float = 0.5  # 30 minutos (limpeza de hora em hora)
 
     # Cookies de autenticação opcionais (para Instagram e YouTube restrito)
     COOKIES_FILE: str = ""
