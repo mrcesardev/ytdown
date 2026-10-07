@@ -795,20 +795,18 @@ def extract_media_info(url: str) -> Dict[str, Any]:
         }
     }
     cookies_path = settings.resolved_cookies_file
-    if cookies_path:
-        ydl_opts["cookiefile"] = cookies_path
-
     info = None
     try:
+        # Tenta primeiro sem cookies (evita conflitos com sessões do Google e bloqueios anti-bot)
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
     except Exception as e:
         err_str = str(e).lower()
-        if ("the page needs to be reloaded" in err_str or "requested format is not available" in err_str or "403" in err_str) and "cookiefile" in ydl_opts:
-            logger.warning(f"Cookies do YouTube rejeitados ({e}). Executando fallback automático sem cookies...")
-            ydl_opts_clean = dict(ydl_opts)
-            ydl_opts_clean.pop("cookiefile", None)
-            with yt_dlp.YoutubeDL(ydl_opts_clean) as ydl:
+        if cookies_path and ("sign in" in err_str or "confirm your age" in err_str or "private" in err_str or "login" in err_str):
+            logger.info("Vídeo restrito detectado no YouTube. Retentando com cookies...")
+            ydl_opts_cookies = dict(ydl_opts)
+            ydl_opts_cookies["cookiefile"] = cookies_path
+            with yt_dlp.YoutubeDL(ydl_opts_cookies) as ydl:
                 info = ydl.extract_info(url, download=False)
         else:
             raise
@@ -1021,8 +1019,6 @@ def execute_download(
         ydl_opts["merge_output_format"] = "mp4"
 
     cookies_path = settings.resolved_cookies_file
-    if cookies_path:
-        ydl_opts["cookiefile"] = cookies_path
 
     try:
         title = playlist_title or ("playlist" if is_playlist else "video")
@@ -1039,11 +1035,11 @@ def execute_download(
                     ydl.download(safe_selected_urls)
             except Exception as e:
                 err_str = str(e).lower()
-                if ("the page needs to be reloaded" in err_str or "requested format is not available" in err_str or "403" in err_str) and "cookiefile" in ydl_opts:
-                    logger.warning(f"Cookies do YouTube rejeitados no download ({e}). Executando fallback sem cookies...")
-                    ydl_opts_clean = dict(ydl_opts)
-                    ydl_opts_clean.pop("cookiefile", None)
-                    with yt_dlp.YoutubeDL(ydl_opts_clean) as ydl:
+                if cookies_path and ("sign in" in err_str or "confirm your age" in err_str or "private" in err_str or "login" in err_str):
+                    logger.info("Playlist com itens restritos. Retentando download com cookies...")
+                    ydl_opts_cookies = dict(ydl_opts)
+                    ydl_opts_cookies["cookiefile"] = cookies_path
+                    with yt_dlp.YoutubeDL(ydl_opts_cookies) as ydl:
                         ydl.download(safe_selected_urls)
                 else:
                     raise
@@ -1066,11 +1062,11 @@ def execute_download(
                     ydl.download([url])
             except Exception as e:
                 err_str = str(e).lower()
-                if ("the page needs to be reloaded" in err_str or "requested format is not available" in err_str or "403" in err_str) and "cookiefile" in ydl_opts:
-                    logger.warning(f"Cookies do YouTube rejeitados no download ({e}). Executando fallback sem cookies...")
-                    ydl_opts_clean = dict(ydl_opts)
-                    ydl_opts_clean.pop("cookiefile", None)
-                    with yt_dlp.YoutubeDL(ydl_opts_clean) as ydl:
+                if cookies_path and ("sign in" in err_str or "confirm your age" in err_str or "private" in err_str or "login" in err_str):
+                    logger.info("Vídeo restrito detectado no YouTube. Retentando download com cookies...")
+                    ydl_opts_cookies = dict(ydl_opts)
+                    ydl_opts_cookies["cookiefile"] = cookies_path
+                    with yt_dlp.YoutubeDL(ydl_opts_cookies) as ydl:
                         info = ydl.extract_info(url, download=False)
                         if not info:
                             raise ValueError("Não foi possível extrair metadados da URL.")
