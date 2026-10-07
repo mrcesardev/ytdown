@@ -1,5 +1,5 @@
-from typing import Literal, Optional, List
-from pydantic import BaseModel
+from typing import Literal, Optional, List, Any
+from pydantic import BaseModel, field_validator
 
 class PlaylistEntryInfo(BaseModel):
     index: int
@@ -9,6 +9,16 @@ class PlaylistEntryInfo(BaseModel):
     duration_formatted: Optional[str] = None
     thumbnail: Optional[str] = None
     url: str
+
+    @field_validator("duration", mode="before")
+    @classmethod
+    def convert_duration_to_int(cls, v: Any) -> Optional[int]:
+        if v is None:
+            return None
+        try:
+            return int(round(float(v)))
+        except (ValueError, TypeError):
+            return None
 
 class MediaInfoRequest(BaseModel):
     url: str
@@ -23,6 +33,16 @@ class MediaInfoResponse(BaseModel):
     is_playlist: bool = False
     entries: Optional[List[PlaylistEntryInfo]] = None
     total_entries: Optional[int] = None
+
+    @field_validator("duration", mode="before")
+    @classmethod
+    def convert_duration_to_int(cls, v: Any) -> Optional[int]:
+        if v is None:
+            return None
+        try:
+            return int(round(float(v)))
+        except (ValueError, TypeError):
+            return None
 
 class DownloadRequest(BaseModel):
     id: Optional[str] = None  # UUID pré-gerado pelo frontend no Supabase

@@ -25,6 +25,28 @@ def sanitize_filename(name: str) -> str:
     return name[:100]  # Limita tamanho para evitar erros de path
 
 
+def safe_int_duration(val: Any) -> Optional[int]:
+    """Converte qualquer formato de duração (float, int, string) para segundos inteiros."""
+    if val is None:
+        return None
+    try:
+        return int(round(float(val)))
+    except (ValueError, TypeError):
+        return None
+
+
+def format_duration(seconds: Any) -> Optional[str]:
+    """Formata duração em segundos para string legível (MM:SS ou HH:MM:SS)."""
+    secs = safe_int_duration(seconds)
+    if not secs:
+        return None
+    mins, s = divmod(secs, 60)
+    hrs, mins = divmod(mins, 60)
+    if hrs > 0:
+        return f"{hrs:d}:{mins:02d}:{s:02d}"
+    return f"{mins:02d}:{s:02d}"
+
+
 def is_tiktok_url(url: str) -> bool:
     """Detecta se a URL pertence ao TikTok."""
     if not url:
@@ -48,19 +70,9 @@ def extract_tiktok_info(url: str) -> Dict[str, Any]:
 
     d = res_json["data"]
     title = d.get("title") or f"TikTok_{d.get('id', 'video')}"
-    duration = d.get("duration")
+    duration = safe_int_duration(d.get("duration"))
     uploader = d.get("author", {}).get("nickname") or d.get("author", {}).get("unique_id") or "TikTok Creator"
     cover = d.get("cover") or d.get("origin_cover")
-
-    def format_duration(seconds: Optional[int]) -> Optional[str]:
-        if not seconds:
-            return None
-        seconds = int(seconds)
-        mins, secs = divmod(seconds, 60)
-        hrs, mins = divmod(mins, 60)
-        if hrs > 0:
-            return f"{hrs:d}:{mins:02d}:{secs:02d}"
-        return f"{mins:02d}:{secs:02d}"
 
     return {
         "url": url,
@@ -216,21 +228,11 @@ def extract_instagram_info(url: str) -> Dict[str, Any]:
             title = info.get("title") or info.get("description") or f"Instagram_{info.get('id', 'media')}"
             if len(title) > 90:
                 title = title[:90] + "..."
-            duration = info.get("duration")
+            duration = safe_int_duration(info.get("duration"))
             uploader = info.get("uploader") or info.get("channel") or "Instagram"
             thumbnail = info.get("thumbnail")
             if not thumbnail and info.get("thumbnails"):
                 thumbnail = info.get("thumbnails")[-1].get("url")
-
-            def format_duration(seconds: Optional[int]) -> Optional[str]:
-                if not seconds:
-                    return None
-                seconds = int(seconds)
-                mins, secs = divmod(seconds, 60)
-                hrs, mins = divmod(mins, 60)
-                if hrs > 0:
-                    return f"{hrs:d}:{mins:02d}:{secs:02d}"
-                return f"{mins:02d}:{secs:02d}"
 
             return {
                 "url": clean_url,
@@ -432,19 +434,9 @@ def extract_twitter_info(url: str) -> Dict[str, Any]:
                 if len(raw_title) > 90:
                     raw_title = raw_title[:90] + "..."
                 raw_title = raw_title.replace("\n", " ").strip()
-                duration = v.get("duration")
+                duration = safe_int_duration(v.get("duration"))
                 uploader = tweet.get("author", {}).get("name") or tweet.get("author", {}).get("screen_name") or "X (Twitter)"
                 thumbnail = v.get("thumbnail_url")
-
-                def format_duration(seconds: Optional[int | float]) -> Optional[str]:
-                    if not seconds:
-                        return None
-                    seconds = int(seconds)
-                    mins, secs = divmod(seconds, 60)
-                    hrs, mins = divmod(mins, 60)
-                    if hrs > 0:
-                        return f"{hrs:d}:{mins:02d}:{secs:02d}"
-                    return f"{mins:02d}:{secs:02d}"
 
                 return {
                     "url": clean_url,
@@ -486,21 +478,11 @@ def extract_twitter_info(url: str) -> Dict[str, Any]:
             raw_title = info.get("title") or info.get("description") or f"X_{info.get('id', 'media')}"
             if len(raw_title) > 90:
                 raw_title = raw_title[:90] + "..."
-            duration = info.get("duration")
+            duration = safe_int_duration(info.get("duration"))
             uploader = info.get("uploader") or info.get("channel") or info.get("uploader_id") or "X (Twitter)"
             thumbnail = info.get("thumbnail")
             if not thumbnail and info.get("thumbnails"):
                 thumbnail = info.get("thumbnails")[-1].get("url")
-
-            def format_duration(seconds: Optional[int]) -> Optional[str]:
-                if not seconds:
-                    return None
-                seconds = int(seconds)
-                mins, secs = divmod(seconds, 60)
-                hrs, mins = divmod(mins, 60)
-                if hrs > 0:
-                    return f"{hrs:d}:{mins:02d}:{secs:02d}"
-                return f"{mins:02d}:{secs:02d}"
 
             return {
                 "url": clean_url,
@@ -811,16 +793,6 @@ def extract_media_info(url: str) -> Dict[str, Any]:
     if cookies_path:
         ydl_opts["cookiefile"] = cookies_path
 
-    def format_duration(seconds: Optional[int]) -> Optional[str]:
-        if not seconds:
-            return None
-        seconds = int(seconds)
-        mins, secs = divmod(seconds, 60)
-        hrs, mins = divmod(mins, 60)
-        if hrs > 0:
-            return f"{hrs:d}:{mins:02d}:{secs:02d}"
-        return f"{mins:02d}:{secs:02d}"
-
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=False)
         if not info:
@@ -849,7 +821,7 @@ def extract_media_info(url: str) -> Dict[str, Any]:
                     "index": i,
                     "id": v_id,
                     "title": entry.get("title") or f"Vídeo {i}",
-                    "duration": entry.get("duration"),
+                    "duration": safe_int_duration(entry.get("duration")),
                     "duration_formatted": format_duration(entry.get("duration")),
                     "thumbnail": v_thumb,
                     "url": v_url,
@@ -872,7 +844,7 @@ def extract_media_info(url: str) -> Dict[str, Any]:
             }
         else:
             # Vídeo individual
-            duration = info.get("duration")
+            duration = safe_int_duration(info.get("duration"))
             thumbnail = info.get("thumbnail")
             if not thumbnail and info.get("thumbnails"):
                 thumbnail = info.get("thumbnails")[-1].get("url")
