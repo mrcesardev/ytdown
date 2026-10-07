@@ -26,7 +26,12 @@ from app.tasks import (
     cleanup_old_files,
     extract_media_info,
 )
-from app.supabase_client import get_supabase, create_download_record
+from app.supabase_client import (
+    get_supabase,
+    create_download_record,
+    get_disk_status,
+    get_cached_download_record,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -111,9 +116,12 @@ def enqueue_download(
 
     use_celery = False
     try:
-        if celery_app.control.ping(timeout=0.3):
+        import redis
+        r = redis.from_url(settings.REDIS_URL, socket_connect_timeout=0.8, socket_timeout=0.8)
+        if r.ping():
             use_celery = True
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Broker Celery/Redis indisponível ({e}). Executando via BackgroundTasks local.")
         use_celery = False
 
     if use_celery:
@@ -155,29 +163,63 @@ def enqueue_download(
 
 @app.get("/api/downloads/{download_id}", response_model=DownloadStatus)
 def get_download_status(download_id: str):
-    """Consulta o status da tarefa no Supabase ou Celery."""
-    # 1. Consulta no Supabase (fonte da verdade)
-    client = get_supabase()
-    if client:
-        try:
-            res = client.table("media_downloads").select("*").eq("id", download_id).execute()
-            if res.data:
-                item = res.data[0]
-                return DownloadStatus(
-                    id=download_id,
-                    status=item.get("status", "pending"),
-                    progress=item.get("progress", 0),
-                    title=item.get("title"),
-                    thumbnail=item.get("thumbnail"),
-                    download_url=item.get("download_url"),
-                    filename=item.get("filename"),
-                    file_size=item.get("file_size"),
-                    error_message=item.get("error_message")
-                )
-        except Exception as e:
-            logger.error(f"Erro ao consultar status no Supabase: {e}")
+    """Consulta o status da tarefa através de múltiplos níveis de resiliência:
+    1. Arquivo final pronto no disco compartilhado (/app/downloads)
+    2. Estado salvo em disco (.status_{download_id}.json) sincronizado entre worker e API
+    3. Cache em memória da aplicação
+    4. Tarefa assíncrona do Celery (Redis)
+    5. Banco de dados do Supabase
+    """
+    download_dir = Path(settings.DOWNLOAD_DIR)
 
-    # 2. Fallback Celery
+    # 1. Checa se o arquivo final já foi gerado e está pronto no disco
+    # (Evita travamentos caso o Supabase ou Celery backend falhem ou estejam desatualizados)
+    try:
+        completed_files = [
+            f for f in download_dir.glob(f"{download_id}_*")
+            if f.is_file()
+            and not f.name.endswith((".part", ".tmp", ".ytdl", ".json"))
+            and not f.name.startswith("temp_")
+        ]
+        if completed_files:
+            final_file = completed_files[0]
+            filename = final_file.name
+            file_size = final_file.stat().st_size
+            download_url = f"{settings.BASE_URL.rstrip('/')}/api/files/{quote(filename)}"
+            clean_name = filename[len(f"{download_id}_"):].rsplit(".", 1)[0].replace("_", " ")
+
+            disk_meta = get_disk_status(download_id) or get_cached_download_record(download_id) or {}
+            return DownloadStatus(
+                id=download_id,
+                status="completed",
+                progress=100,
+                title=disk_meta.get("title") or clean_name,
+                thumbnail=disk_meta.get("thumbnail"),
+                download_url=download_url,
+                filename=filename,
+                file_size=file_size
+            )
+    except Exception as e:
+        logger.debug(f"Erro ao verificar arquivos no disco para {download_id}: {e}")
+
+    # 2. Checa o estado salvo no disco compartilhado entre worker e API
+    disk_info = get_disk_status(download_id) or get_cached_download_record(download_id)
+    if disk_info:
+        status = disk_info.get("status", "pending")
+        if status in ("completed", "failed") or (status == "processing" and disk_info.get("progress", 0) > 0):
+            return DownloadStatus(
+                id=download_id,
+                status=status,
+                progress=disk_info.get("progress", 0),
+                title=disk_info.get("title"),
+                thumbnail=disk_info.get("thumbnail"),
+                download_url=disk_info.get("download_url"),
+                filename=disk_info.get("filename"),
+                file_size=disk_info.get("file_size"),
+                error_message=disk_info.get("error_message")
+            )
+
+    # 3. Consulta no Celery (Redis)
     try:
         task_res = AsyncResult(download_id, app=celery_app)
         if task_res.state == "SUCCESS":
@@ -198,15 +240,60 @@ def get_download_status(download_id: str):
                 error_message=str(task_res.result)
             )
         elif task_res.state == "PROGRESS":
-            meta = task_res.info or {}
+            meta = task_res.info or {} if isinstance(task_res.info, dict) else {}
             return DownloadStatus(
                 id=download_id,
                 status="processing",
                 progress=meta.get("progress", 50)
             )
+        elif task_res.state == "STARTED":
+            return DownloadStatus(
+                id=download_id,
+                status="processing",
+                progress=20
+            )
     except Exception:
         pass
 
+    # 4. Consulta no Supabase
+    client = get_supabase()
+    if client:
+        try:
+            res = client.table("media_downloads").select("*").eq("id", download_id).execute()
+            if res.data:
+                item = res.data[0]
+                sb_status = item.get("status", "pending")
+                sb_progress = item.get("progress", 0)
+                if sb_status in ("completed", "failed") or (sb_status == "processing" and sb_progress > 0):
+                    return DownloadStatus(
+                        id=download_id,
+                        status=sb_status,
+                        progress=sb_progress,
+                        title=item.get("title"),
+                        thumbnail=item.get("thumbnail"),
+                        download_url=item.get("download_url"),
+                        filename=item.get("filename"),
+                        file_size=item.get("file_size"),
+                        error_message=item.get("error_message")
+                    )
+        except Exception as e:
+            logger.error(f"Erro ao consultar status no Supabase: {e}")
+
+    # 5. Verifica se há arquivos temporários em processamento ativo no disco
+    try:
+        temp_files = list(download_dir.glob(f"*{download_id}*"))
+        if temp_files:
+            return DownloadStatus(
+                id=download_id,
+                status="processing",
+                progress=disk_info.get("progress", 25) if disk_info else 25,
+                title=disk_info.get("title") if disk_info else None,
+                thumbnail=disk_info.get("thumbnail") if disk_info else None
+            )
+    except Exception:
+        pass
+
+    # 6. Fallback inicial
     return DownloadStatus(
         id=download_id,
         status="pending",
