@@ -25,6 +25,7 @@ services:
       - DOWNLOAD_DIR=/app/downloads
     volumes:
       - ./downloads:/app/downloads
+      - ./app:/app/app
     depends_on:
       redis:
         condition: service_healthy
@@ -42,6 +43,7 @@ services:
       - DOWNLOAD_DIR=/app/downloads
     volumes:
       - ./downloads:/app/downloads
+      - ./app:/app/app
     depends_on:
       redis:
         condition: service_healthy
