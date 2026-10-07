@@ -788,80 +788,98 @@ def extract_media_info(url: str) -> Dict[str, Any]:
         "no_warnings": True,
         "socket_timeout": 10,
         "playlistend": 15,  # Garante retorno rápido em playlists grandes
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["visionos", "android", "web"]
+            }
+        }
     }
     cookies_path = settings.resolved_cookies_file
     if cookies_path:
         ydl_opts["cookiefile"] = cookies_path
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=False)
-        if not info:
-            raise ValueError("Não foi possível extrair metadados da URL informada.")
-
-        is_playlist = info.get("_type") == "playlist" or "entries" in info
-
-        if is_playlist:
-            raw_entries = info.get("entries") or []
-            entries = []
-            for i, entry in enumerate(raw_entries, 1):
-                if not entry:
-                    continue
-                v_id = entry.get("id") or str(i)
-                v_url = entry.get("url")
-                if not v_url or not v_url.startswith("http"):
-                    v_url = f"https://www.youtube.com/watch?v={v_id}"
-
-                v_thumb = entry.get("thumbnail")
-                if not v_thumb and entry.get("thumbnails"):
-                    v_thumb = entry.get("thumbnails")[-1].get("url")
-                if not v_thumb and v_id:
-                    v_thumb = f"https://i.ytimg.com/vi/{v_id}/hqdefault.jpg"
-
-                entries.append({
-                    "index": i,
-                    "id": v_id,
-                    "title": entry.get("title") or f"Vídeo {i}",
-                    "duration": safe_int_duration(entry.get("duration")),
-                    "duration_formatted": format_duration(entry.get("duration")),
-                    "thumbnail": v_thumb,
-                    "url": v_url,
-                })
-
-            pl_thumb = info.get("thumbnail")
-            if not pl_thumb and entries:
-                pl_thumb = entries[0].get("thumbnail")
-
-            return {
-                "url": url,
-                "title": info.get("title") or "Playlist do YouTube",
-                "thumbnail": pl_thumb,
-                "duration": None,
-                "duration_formatted": None,
-                "uploader": info.get("uploader") or info.get("channel"),
-                "is_playlist": True,
-                "entries": entries,
-                "total_entries": len(entries),
-            }
+    info = None
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+    except Exception as e:
+        err_str = str(e).lower()
+        if ("the page needs to be reloaded" in err_str or "requested format is not available" in err_str or "403" in err_str) and "cookiefile" in ydl_opts:
+            logger.warning(f"Cookies do YouTube rejeitados ({e}). Executando fallback automático sem cookies...")
+            ydl_opts_clean = dict(ydl_opts)
+            ydl_opts_clean.pop("cookiefile", None)
+            with yt_dlp.YoutubeDL(ydl_opts_clean) as ydl:
+                info = ydl.extract_info(url, download=False)
         else:
-            # Vídeo individual
-            duration = safe_int_duration(info.get("duration"))
-            thumbnail = info.get("thumbnail")
-            if not thumbnail and info.get("thumbnails"):
-                thumbnail = info.get("thumbnails")[-1].get("url")
-            if not thumbnail and info.get("id"):
-                thumbnail = f"https://i.ytimg.com/vi/{info['id']}/hqdefault.jpg"
+            raise
 
-            return {
-                "url": url,
-                "title": info.get("title") or "Vídeo do YouTube",
-                "thumbnail": thumbnail,
-                "duration": duration,
-                "duration_formatted": format_duration(duration),
-                "uploader": info.get("uploader") or info.get("channel"),
-                "is_playlist": False,
-                "entries": None,
-                "total_entries": 1,
-            }
+    if not info:
+        raise ValueError("Não foi possível extrair metadados da URL informada.")
+
+    is_playlist = info.get("_type") == "playlist" or "entries" in info
+
+    if is_playlist:
+        raw_entries = info.get("entries") or []
+        entries = []
+        for i, entry in enumerate(raw_entries, 1):
+            if not entry:
+                continue
+            v_id = entry.get("id") or str(i)
+            v_url = entry.get("url")
+            if not v_url or not v_url.startswith("http"):
+                v_url = f"https://www.youtube.com/watch?v={v_id}"
+
+            v_thumb = entry.get("thumbnail")
+            if not v_thumb and entry.get("thumbnails"):
+                v_thumb = entry.get("thumbnails")[-1].get("url")
+            if not v_thumb and v_id:
+                v_thumb = f"https://i.ytimg.com/vi/{v_id}/hqdefault.jpg"
+
+            entries.append({
+                "index": i,
+                "id": v_id,
+                "title": entry.get("title") or f"Vídeo {i}",
+                "duration": safe_int_duration(entry.get("duration")),
+                "duration_formatted": format_duration(entry.get("duration")),
+                "thumbnail": v_thumb,
+                "url": v_url,
+            })
+
+        pl_thumb = info.get("thumbnail")
+        if not pl_thumb and entries:
+            pl_thumb = entries[0].get("thumbnail")
+
+        return {
+            "url": url,
+            "title": info.get("title") or "Playlist do YouTube",
+            "thumbnail": pl_thumb,
+            "duration": None,
+            "duration_formatted": None,
+            "uploader": info.get("uploader") or info.get("channel"),
+            "is_playlist": True,
+            "entries": entries,
+            "total_entries": len(entries),
+        }
+    else:
+        # Vídeo individual
+        duration = safe_int_duration(info.get("duration"))
+        thumbnail = info.get("thumbnail")
+        if not thumbnail and info.get("thumbnails"):
+            thumbnail = info.get("thumbnails")[-1].get("url")
+        if not thumbnail and info.get("id"):
+            thumbnail = f"https://i.ytimg.com/vi/{info['id']}/hqdefault.jpg"
+
+        return {
+            "url": url,
+            "title": info.get("title") or "Vídeo do YouTube",
+            "thumbnail": thumbnail,
+            "duration": duration,
+            "duration_formatted": format_duration(duration),
+            "uploader": info.get("uploader") or info.get("channel"),
+            "is_playlist": False,
+            "entries": None,
+            "total_entries": 1,
+        }
 
 
 def execute_download(
@@ -990,6 +1008,11 @@ def execute_download(
         "socket_timeout": 30,
         "retries": 5,
         "format": format_spec,
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["visionos", "android", "web"]
+            }
+        }
     }
 
     if audio_opts:
@@ -1011,24 +1034,59 @@ def execute_download(
                 "title": title,
                 "progress": 15
             })
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download(safe_selected_urls)
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download(safe_selected_urls)
+            except Exception as e:
+                err_str = str(e).lower()
+                if ("the page needs to be reloaded" in err_str or "requested format is not available" in err_str or "403" in err_str) and "cookiefile" in ydl_opts:
+                    logger.warning(f"Cookies do YouTube rejeitados no download ({e}). Executando fallback sem cookies...")
+                    ydl_opts_clean = dict(ydl_opts)
+                    ydl_opts_clean.pop("cookiefile", None)
+                    with yt_dlp.YoutubeDL(ydl_opts_clean) as ydl:
+                        ydl.download(safe_selected_urls)
+                else:
+                    raise
         else:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-                if not info:
-                    raise ValueError("Não foi possível extrair metadados da URL.")
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(url, download=False)
+                    if not info:
+                        raise ValueError("Não foi possível extrair metadados da URL.")
 
-                title = playlist_title or info.get("title", "playlist" if is_playlist else "video")
-                thumbnail = info.get("thumbnail")
-                
-                update_download_record(download_id, {
-                    "title": title,
-                    "thumbnail": thumbnail,
-                    "progress": 20
-                })
+                    title = playlist_title or info.get("title", "playlist" if is_playlist else "video")
+                    thumbnail = info.get("thumbnail")
+                    
+                    update_download_record(download_id, {
+                        "title": title,
+                        "thumbnail": thumbnail,
+                        "progress": 20
+                    })
 
-                ydl.download([url])
+                    ydl.download([url])
+            except Exception as e:
+                err_str = str(e).lower()
+                if ("the page needs to be reloaded" in err_str or "requested format is not available" in err_str or "403" in err_str) and "cookiefile" in ydl_opts:
+                    logger.warning(f"Cookies do YouTube rejeitados no download ({e}). Executando fallback sem cookies...")
+                    ydl_opts_clean = dict(ydl_opts)
+                    ydl_opts_clean.pop("cookiefile", None)
+                    with yt_dlp.YoutubeDL(ydl_opts_clean) as ydl:
+                        info = ydl.extract_info(url, download=False)
+                        if not info:
+                            raise ValueError("Não foi possível extrair metadados da URL.")
+
+                        title = playlist_title or info.get("title", "playlist" if is_playlist else "video")
+                        thumbnail = info.get("thumbnail")
+
+                        update_download_record(download_id, {
+                            "title": title,
+                            "thumbnail": thumbnail,
+                            "progress": 20
+                        })
+
+                        ydl.download([url])
+                else:
+                    raise
 
         # Se for playlist, compacta em um único arquivo .zip
         if is_playlist and playlist_subfolder and playlist_subfolder.exists():
