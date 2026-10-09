@@ -174,12 +174,42 @@ export default function DownloadList({ userId, activeDownloads }: DownloadListPr
     return `${mb.toFixed(1)} MB`;
   };
 
-  const resolveDownloadUrl = (rawUrl: string) => {
-    const publicApi = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '');
-    if (publicApi && rawUrl.includes('localhost:8000')) {
-      return rawUrl.replace('http://localhost:8000', publicApi);
+  const resolveDownloadUrl = (item: MediaDownload) => {
+    // 1. Prioriza rota proxy da própria aplicação Next.js para garantir Same-Origin
+    // e evitar bloqueios de Mixed Content do Chrome quando o front estiver em HTTPS e o back em HTTP.
+    if (item.filename) {
+      return `/api/files/${encodeURIComponent(item.filename)}`;
     }
-    return rawUrl;
+
+    if (item.download_url) {
+      // Extrai o nome do arquivo se a URL for no formato /api/files/...
+      const filesIdx = item.download_url.indexOf('/api/files/');
+      if (filesIdx !== -1) {
+        const extracted = item.download_url.substring(filesIdx + '/api/files/'.length);
+        if (extracted) {
+          return `/api/files/${extracted}`;
+        }
+      }
+
+      const publicApi = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '');
+      if (publicApi && item.download_url.includes('localhost:8000')) {
+        return item.download_url.replace('http://localhost:8000', publicApi);
+      }
+      return item.download_url;
+    }
+
+    return '#';
+  };
+
+  const getCleanFileName = (item: MediaDownload) => {
+    if (item.filename) {
+      return item.filename.replace(/^[a-f0-9\-]{36}_/, '');
+    }
+    if (item.title) {
+      const ext = item.format === 'mp3' ? 'mp3' : item.is_playlist ? 'zip' : 'mp4';
+      return `${item.title.replace(/[\\/:*?"<>|]/g, '_')}.${ext}`;
+    }
+    return undefined;
   };
 
   if (loading) {
@@ -333,12 +363,10 @@ export default function DownloadList({ userId, activeDownloads }: DownloadListPr
 
             {/* Ações */}
             <div className="flex items-center gap-2 w-full sm:w-auto justify-end border-t sm:border-t-0 pt-3 sm:pt-0 border-slate-800">
-              {item.status === 'completed' && item.download_url && (
+              {item.status === 'completed' && (item.download_url || item.filename) && (
                 <a
-                  href={resolveDownloadUrl(item.download_url)}
-                  download
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  href={resolveDownloadUrl(item)}
+                  download={getCleanFileName(item)}
                   className="px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-bold text-xs rounded-xl flex items-center gap-2 shadow-lg shadow-emerald-600/25 transition-all transform hover:scale-[1.02]"
                 >
                   <Download className="w-4 h-4" />

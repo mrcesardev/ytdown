@@ -2,7 +2,7 @@ import os
 import re
 import uuid
 import logging
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 from pathlib import Path
 from typing import Optional
 from fastapi import FastAPI, HTTPException, Header, Depends, BackgroundTasks
@@ -54,6 +54,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 
@@ -304,17 +305,20 @@ def get_download_status(download_id: str):
 @app.get("/api/files/{filename:path}")
 def download_file(filename: str):
     """Entrega o arquivo baixado com suporte a download direto no navegador."""
-    safe_name = os.path.basename(filename)
+    safe_name = os.path.basename(unquote(filename))
     file_path = Path(settings.DOWNLOAD_DIR) / safe_name
 
     # Fallback resiliente: se o arquivo exato não for encontrado por variação de encoding/caracteres,
     # procura por qualquer arquivo que comece com o prefixo do ID do download
     if not file_path.exists() or not file_path.is_file():
-        uuid_match = re.match(r"^([a-f0-9\-]{36})_", safe_name)
+        uuid_match = re.match(r"^([a-f0-9\-]{36})", safe_name)
         if uuid_match:
             download_id = uuid_match.group(1)
-            matching = list(Path(settings.DOWNLOAD_DIR).glob(f"{download_id}_*"))
-            if matching and matching[0].is_file():
+            matching = [
+                f for f in Path(settings.DOWNLOAD_DIR).glob(f"{download_id}*")
+                if f.is_file() and not f.name.endswith((".part", ".tmp", ".ytdl", ".json"))
+            ]
+            if matching:
                 file_path = matching[0]
                 safe_name = file_path.name
 

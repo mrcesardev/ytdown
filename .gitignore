@@ -10,6 +10,7 @@ coverage
 .next/
 out/
 build
+*.tsbuildinfo
 
 # Python & Virtualenv
 __pycache__/
