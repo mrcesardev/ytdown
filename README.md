@@ -105,7 +105,7 @@ YtDown/
    chmod +x deploy/setup_vps.sh
    ./deploy/setup_vps.sh
    ```
-   > O script criará automaticamente **2GB de SWAP** (essencial para não travar a memória de 2GB durante conversões no FFmpeg), instalará o Docker, Nginx, UFW e ativará o cron job de limpeza de arquivos com mais de 2 horas.
+   > O script criará automaticamente **2GB de SWAP** (essencial para não travar a memória de 2GB durante conversões no FFmpeg), instalará o Docker, Nginx, UFW e ativará o cron job horário de limpeza de arquivos com mais de 30 minutos (remoção em aproximadamente 30–90 minutos).
 
 4. Configure as variáveis de ambiente do backend:
    ```bash

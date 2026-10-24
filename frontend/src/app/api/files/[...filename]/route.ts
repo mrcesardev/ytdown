@@ -20,10 +20,11 @@ export async function GET(
   try {
     const rawSegments = params.filename || [];
     const filenamePath = Array.isArray(rawSegments)
-      ? rawSegments.map((s) => decodeURIComponent(s)).join('/')
-      : decodeURIComponent(rawSegments as string);
+      ? rawSegments.join('/')
+      : (rawSegments as string);
 
-    if (!filenamePath) {
+    // Next.js already decoded route parameters. A second decode corrupts '%' names.
+    if (!filenamePath || filenamePath.includes('/') || filenamePath.includes('\\')) {
       return NextResponse.json(
         { detail: 'Nome do arquivo não informado.' },
         { status: 400 }
@@ -36,6 +37,8 @@ export async function GET(
     // Repassa cabeçalhos do cliente (ex: Range para downloads parciais/resumo)
     const reqHeaders: Record<string, string> = {};
     const clientRange = req.headers.get('range');
+    const ifRange = req.headers.get('if-range');
+    if (ifRange) reqHeaders['If-Range'] = ifRange;
     if (clientRange) {
       reqHeaders['Range'] = clientRange;
     }
@@ -54,7 +57,12 @@ export async function GET(
         errorText || 'Arquivo não encontrado ou já expirado pelo sistema de limpeza.',
         {
           status: vpsRes.status,
-          headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+          headers: {
+            'Content-Type': 'text/plain; charset=utf-8',
+            'Cache-Control': 'no-store',
+            ...(vpsRes.headers.get('content-range')
+              ? { 'Content-Range': vpsRes.headers.get('content-range')! } : {}),
+          },
         }
       );
     }
@@ -68,12 +76,17 @@ export async function GET(
     const contentRange = vpsRes.headers.get('content-range');
 
     resHeaders.set('Content-Type', contentType);
+    resHeaders.set('Cache-Control', 'no-store');
+    for (const name of ['etag', 'last-modified']) {
+      const value = vpsRes.headers.get(name);
+      if (value) resHeaders.set(name, value);
+    }
     if (contentDisposition) {
       resHeaders.set('Content-Disposition', contentDisposition);
     } else {
       // Nome sem o UUID do início para exibição amigável
       const cleanName = filenamePath.replace(/^[a-f0-9\-]{36}_/, '') || filenamePath;
-      resHeaders.set('Content-Disposition', `attachment; filename="${cleanName}"`);
+      resHeaders.set('Content-Disposition', `attachment; filename="download"; filename*=UTF-8''${encodeURIComponent(cleanName).replace(/['()*]/g, (c) => '%' + c.charCodeAt(0).toString(16))}`);
     }
 
     if (contentLength) resHeaders.set('Content-Length', contentLength);

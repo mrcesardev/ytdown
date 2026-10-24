@@ -52,11 +52,11 @@ echo "🧹 Configurando Cron Job de limpeza automática de arquivos..."
 DOWNLOADS_PATH="/opt/ytdown/backend/downloads"
 mkdir -p "$DOWNLOADS_PATH"
 
-# Executa no minuto 0 de cada hora (0 * * * *).
-# Remove arquivos de mídia e temporários com mais de 30 minutos de vida (-mmin +30),
-# garantindo que o usuário tenha tempo para baixar (< 30 min) e protegendo cookies.txt, *.txt e .gitkeep.
-CRON_JOB="0 * * * * find $DOWNLOADS_PATH -type f ! -name 'cookies.txt' ! -name '*.txt' ! -name '.gitkeep' -mmin +30 -delete && find $DOWNLOADS_PATH -mindepth 1 -maxdepth 1 -type d -name 'pl_*' -mmin +30 -exec rm -rf {} +"
-(crontab -l 2>/dev/null | grep -Fv "$DOWNLOADS_PATH" ; echo "$CRON_JOB") | crontab -
+# Use the same cleanup implementation as the API, including fresh playlist children.
+# The old recursive find could delete a directory while FFmpeg updated its contents.
+CRON_JOB="0 * * * * cd /opt/ytdown/backend && docker compose exec -T api python -c 'from app.tasks import cleanup_old_files; cleanup_old_files()'"
+
+(crontab -l 2>/dev/null | grep -Fv "$DOWNLOADS_PATH" | grep -Fv "from app.tasks import cleanup_old_files" ; echo "$CRON_JOB") | crontab -
 
 echo "=============================================================================="
 echo "✅ Configuração da VPS concluída com sucesso!"

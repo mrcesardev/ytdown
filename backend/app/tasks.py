@@ -1099,12 +1099,13 @@ def execute_download(
         else:
             target_ext = "mp3" if format_type == "mp3" else "mp4"
             generated_files = list(download_dir.glob(f"{download_id}_*.{target_ext}"))
+            generated_files = [f for f in generated_files if f.is_file() and not f.is_symlink() and f.stat().st_size > 0]
             if not generated_files:
-                generated_files = list(download_dir.glob(f"{download_id}_*"))
-                if not generated_files:
-                    raise FileNotFoundError(f"Arquivo final com id {download_id} não encontrado no disco.")
+                raise FileNotFoundError(f"Arquivo final com id {download_id} não encontrado no disco.")
             final_file = generated_files[0]
 
+        # Retention starts when conversion/packaging completes, not at download start.
+        final_file.touch()
         filename = final_file.name
         file_size = final_file.stat().st_size
         download_url = f"{settings.BASE_URL.rstrip('/')}/api/files/{quote(filename)}"
@@ -1191,9 +1192,13 @@ def cleanup_old_files() -> int:
                 logger.error(f"Erro ao remover arquivo {file_path.name}: {e}")
         elif file_path.is_dir() and file_path.name.startswith("pl_"):
             try:
-                mtime = file_path.stat().st_mtime
+                # Writing an existing child does not update the directory mtime.
+                mtime = max([file_path.stat().st_mtime] + [
+                    child.stat().st_mtime for child in file_path.rglob("*")
+                    if not child.is_symlink()
+                ])
                 if now - mtime > cutoff_seconds:
-                    shutil.rmtree(file_path, ignore_errors=True)
+                    shutil.rmtree(file_path)
                     removed_count += 1
             except Exception as e:
                 logger.error(f"Erro ao remover pasta temporária {file_path.name}: {e}")
