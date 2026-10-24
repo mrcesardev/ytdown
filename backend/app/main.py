@@ -2,7 +2,7 @@ import os
 import re
 import uuid
 import logging
-from urllib.parse import quote, unquote
+from urllib.parse import quote
 from pathlib import Path
 from typing import Optional
 from fastapi import FastAPI, HTTPException, Header, Depends, BackgroundTasks
@@ -172,15 +172,17 @@ def get_download_status(download_id: str):
     5. Banco de dados do Supabase
     """
     download_dir = Path(settings.DOWNLOAD_DIR)
+    disk_info = get_disk_status(download_id) or get_cached_download_record(download_id)
 
     # 1. Checa se o arquivo final já foi gerado e está pronto no disco
     # (Evita travamentos caso o Supabase ou Celery backend falhem ou estejam desatualizados)
     try:
         completed_files = [
             f for f in download_dir.glob(f"{download_id}_*")
-            if f.is_file()
-            and not f.name.endswith((".part", ".tmp", ".ytdl", ".json"))
-            and not f.name.startswith("temp_")
+            if f.is_file() and not f.is_symlink() and f.stat().st_size > 0
+            and f.suffix.lower() in {".mp3", ".mp4", ".zip"}
+            # A media file can still be undergoing conversion/merge.
+            and (not disk_info or disk_info.get("status") == "completed")
         ]
         if completed_files:
             final_file = completed_files[0]
@@ -204,9 +206,13 @@ def get_download_status(download_id: str):
         logger.debug(f"Erro ao verificar arquivos no disco para {download_id}: {e}")
 
     # 2. Checa o estado salvo no disco compartilhado entre worker e API
-    disk_info = get_disk_status(download_id) or get_cached_download_record(download_id)
     if disk_info:
         status = disk_info.get("status", "pending")
+        if status == "completed":
+            return DownloadStatus(
+                id=download_id, status="failed",
+                error_message="Arquivo não encontrado ou já expirado pelo sistema de limpeza."
+            )
         if status in ("completed", "failed") or (status == "processing" and disk_info.get("progress", 0) > 0):
             return DownloadStatus(
                 id=download_id,
@@ -305,24 +311,34 @@ def get_download_status(download_id: str):
 @app.get("/api/files/{filename:path}")
 def download_file(filename: str):
     """Entrega o arquivo baixado com suporte a download direto no navegador."""
-    safe_name = os.path.basename(unquote(filename))
-    file_path = Path(settings.DOWNLOAD_DIR) / safe_name
+    # ASGI already decodes the URL once. Preserve literal percent sequences.
+    safe_name = os.path.basename(filename)
+    download_dir = Path(settings.DOWNLOAD_DIR).resolve()
+    file_path = download_dir / safe_name
+
+    def downloadable(path: Path) -> bool:
+        return (not path.is_symlink() and path.is_file()
+                and path.resolve().parent == download_dir
+                and path.suffix.lower() in {".mp3", ".mp4", ".zip"})
+
+    if filename != safe_name or not safe_name:
+        raise HTTPException(status_code=404, detail="Arquivo não encontrado.")
 
     # Fallback resiliente: se o arquivo exato não for encontrado por variação de encoding/caracteres,
     # procura por qualquer arquivo que comece com o prefixo do ID do download
-    if not file_path.exists() or not file_path.is_file():
+    if not downloadable(file_path):
         uuid_match = re.match(r"^([a-f0-9\-]{36})", safe_name)
         if uuid_match:
             download_id = uuid_match.group(1)
             matching = [
                 f for f in Path(settings.DOWNLOAD_DIR).glob(f"{download_id}*")
-                if f.is_file() and not f.name.endswith((".part", ".tmp", ".ytdl", ".json"))
+                if downloadable(f)
             ]
             if matching:
                 file_path = matching[0]
                 safe_name = file_path.name
 
-    if not file_path.exists() or not file_path.is_file():
+    if not downloadable(file_path):
         raise HTTPException(status_code=404, detail="Arquivo não encontrado ou já expirado pelo sistema de limpeza.")
 
     if safe_name.endswith(".zip"):
